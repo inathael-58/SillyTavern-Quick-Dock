@@ -19,6 +19,7 @@
     font-size: calc(var(--qd-size) * 0.42);
     color: var(--qd-fg);
     background: color-mix(in srgb, var(--qd-bg) 70%, transparent);
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     border: 1px solid var(--SmartThemeBorderColor, #555);
     border-radius: 50%;
@@ -69,6 +70,7 @@
     overscroll-behavior: contain;
     color: var(--SmartThemeBodyColor, #ddd);
     background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.85));
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     border: 1px solid var(--SmartThemeBorderColor, #555);
     border-radius: 12px;
@@ -185,51 +187,40 @@
 #qd_panel .qd_barbtn:hover { opacity: 1; background: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 35%, transparent); }
 
 /* ---------------------------------------------------------------- pick mode */
-html.qd_picking #qd_launcher { opacity: 0.3; pointer-events: none; }
+html.qd_picking #qd_launcher { opacity: 0.5; }
 html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-html.qd_picking #qd_pickbar input { -webkit-user-select: text; user-select: text; }
 
+/* No transform here: SillyTavern puts a 3D perspective on <html>, and iOS Safari
+ * then draws transformed fixed elements behind other layers. */
 #qd_pickbar {
     position: fixed;
-    /* just below SillyTavern's top bar, so the bar's buttons stay pickable */
     top: calc(max(0px, env(safe-area-inset-top)) + var(--topBarBlockSize, 40px) + 8px);
-    left: 50%;
-    transform: translateX(-50%);
+    left: 8px;
+    right: 8px;
+    margin: 0 auto;
+    max-width: 460px;
     z-index: 10060;
     display: none;
-    flex-direction: column;
-    gap: 6px;
+    align-items: center;
+    gap: 8px;
     box-sizing: border-box;
-    width: min(460px, calc(100vw - 16px));
     padding: 8px 10px;
     color: var(--SmartThemeBodyColor, #ddd);
     background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.92));
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     border: 1px solid var(--SmartThemeQuoteColor, #e18a24);
     border-radius: 10px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
     font-size: 13px;
+    pointer-events: none; /* taps on the text fall through to whatever is underneath */
 }
 #qd_pickbar.qd_show { display: flex; }
-/* taps on the message text fall through to whatever is underneath */
-#qd_pickbar { pointer-events: none; }
-#qd_pickbar .menu_button, #qd_pickbar input { pointer-events: auto; }
 #qd_pickbar.qd_bottom { top: auto; bottom: calc(max(0px, env(safe-area-inset-bottom)) + 90px); }
 #qd_pickbar.qd_mid { top: 38%; }
-#qd_pickbar .qd_pick_head { display: flex; align-items: center; gap: 8px; }
-#qd_pickbar .qd_pick_head > i { color: var(--SmartThemeQuoteColor, #e18a24); }
+#qd_pickbar > i { color: var(--SmartThemeQuoteColor, #e18a24); }
 #qd_pickbar .qd_pick_msg { flex: 1; }
-#qd_pickbar .menu_button { width: auto; margin: 0; padding: 4px 10px; white-space: nowrap; }
-#qd_pickbar .qd_pick_form { display: none; flex-direction: column; gap: 4px; }
-#qd_pickbar .qd_pick_form.qd_show { display: flex; }
-#qd_pickbar .qd_pick_form input { margin: 0; width: 100%; box-sizing: border-box; }
-#qd_pickbar .qd_pick_target { display: flex; align-items: center; gap: 6px; min-width: 0; }
-#qd_pickbar .qd_pick_target code { font-size: 11px; opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#qd_pickbar .qd_pick_path { font-size: 11px; opacity: 0.75; }
-#qd_pickbar .qd_pick_path:empty { display: none; }
-#qd_pickbar .qd_pick_form.qd_tray_mode .qd_pick_icon,
-#qd_pickbar .qd_pick_form.qd_tray_mode .qd_pick_iconprev { display: none; }
-#qd_pickbar .qd_pick_btns { display: flex; gap: 6px; }
+#qd_pickbar .menu_button { width: auto; margin: 0; padding: 4px 10px; white-space: nowrap; pointer-events: auto; }
 
 #qd_hl {
     position: fixed;

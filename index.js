@@ -213,7 +213,7 @@ function buildUI() {
     launcher.title = 'Quick Dock — แตะเพื่อเปิด · ลากเพื่อย้าย';
     launcher.innerHTML = '<i></i>';
     launcher.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePanel(); } });
-    makeDraggable(launcher, togglePanel);
+    makeDraggable(launcher, () => (pick ? endPick() : togglePanel())); // during pick mode: cancel
 
     panel = document.createElement('div');
     panel.id = 'qd_panel';
@@ -678,7 +678,7 @@ const domObserver = new MutationObserver(() => {
 
 // ---------------------------------------------------------------- pick mode (long-press a button)
 
-let pick = null; // { kind, rebindId, path, timer, down, eatUntil, chosen }
+let pick = null; // { kind, rebindId, path, timer, down, eatUntil, chosen, commitTimer }
 let pickbar = null;
 let hl = null;
 
@@ -698,22 +698,10 @@ function ensurePickbar() {
     pickbar = document.createElement('div');
     pickbar.id = 'qd_pickbar';
     pickbar.innerHTML = `
-        <div class="qd_pick_head">
-            <i class="fa-solid fa-hand-pointer"></i>
-            <span class="qd_pick_msg"></span>
-            <div class="menu_button qd_pick_move" title="ย้ายแถบนี้ไปบน/ล่าง ถ้าบังปุ่มที่ต้องการ"><i class="fa-solid fa-up-down"></i></div>
-            <div class="menu_button qd_pick_cancel" title="ยกเลิก"><i class="fa-solid fa-xmark"></i></div>
-        </div>
-        <div class="qd_pick_form">
-            <div class="qd_pick_target"><i class="qd_pick_iconprev"></i><code class="qd_pick_sel"></code></div>
-            <div class="qd_pick_path"></div>
-            <input type="text" class="text_pole qd_pick_label" placeholder="ชื่อ">
-            <input type="text" class="text_pole qd_pick_icon" placeholder="ไอคอน เช่น fa-solid fa-star">
-            <div class="qd_pick_btns">
-                <div class="menu_button qd_pick_save"><i class="fa-solid fa-check"></i> บันทึก</div>
-                <div class="menu_button qd_pick_again"><i class="fa-solid fa-rotate-left"></i> เลือกใหม่</div>
-            </div>
-        </div>`;
+        <i class="fa-solid fa-hand-pointer"></i>
+        <span class="qd_pick_msg"></span>
+        <div class="menu_button qd_pick_move" title="ย้ายแถบนี้ไปบน/ล่าง ถ้าบังปุ่มที่ต้องการ"><i class="fa-solid fa-up-down"></i></div>
+        <div class="menu_button qd_pick_cancel" title="ยกเลิก"><i class="fa-solid fa-xmark"></i></div>`;
     document.body.appendChild(pickbar);
     hl = document.createElement('div');
     hl.id = 'qd_hl';
@@ -727,26 +715,21 @@ function ensurePickbar() {
         pickbar.classList.remove('qd_mid');
         pickbar.classList.toggle('qd_bottom', s.pickbarBottom);
     });
-    pickbar.querySelector('.qd_pick_again').addEventListener('click', () => {
-        pick.chosen = null;
-        showPickState();
-    });
-    pickbar.querySelector('.qd_pick_save').addEventListener('click', commitPick);
-    pickbar.querySelector('.qd_pick_icon').addEventListener('input', e => {
-        pickbar.querySelector('.qd_pick_iconprev').className = `qd_pick_iconprev ${e.target.value.trim()}`;
-    });
 }
 
 function startPick(kind, rebindId = null) {
     if (pick) endPick();
     closePanel();
     ensurePickbar();
-    pick = { kind, rebindId, path: [], timer: null, down: null, eatUntil: 0, chosen: null };
+    pick = { kind, rebindId, path: [], timer: null, down: null, eatUntil: 0, chosen: null, commitTimer: null };
     document.documentElement.classList.add('qd_picking');
     pickbar.classList.add('qd_show');
     pickbar.classList.toggle('qd_bottom', !!settings().pickbarBottom);
     for (const [type, fn] of Object.entries(PICK_EVENTS)) window.addEventListener(type, fn, { capture: true, passive: false });
-    showPickState();
+    pickbar.querySelector('.qd_pick_msg').textContent = kind === 'sc'
+        ? 'เปิดเมนูได้ตามปกติ แล้วกดค้างที่ปุ่มที่อยากทำเป็นช็อตคัท · แตะปุ่ม ⚡ เพื่อยกเลิก'
+        : 'กดค้างที่ปุ่มลอยที่อยากเก็บเข้า dock · แตะปุ่ม ⚡ เพื่อยกเลิก';
+    hl.classList.remove('qd_show');
     if (kind === 'tray') dodgeFloating();
 }
 
@@ -770,6 +753,7 @@ function dodgeFloating() {
 function endPick() {
     if (!pick) return;
     clearTimeout(pick.timer);
+    clearTimeout(pick.commitTimer);
     for (const [type, fn] of Object.entries(PICK_EVENTS)) window.removeEventListener(type, fn, { capture: true });
     pick = null;
     document.documentElement.classList.remove('qd_picking');
@@ -777,43 +761,13 @@ function endPick() {
     hl?.classList.remove('qd_show');
 }
 
-function showPickState() {
-    const form = pickbar.querySelector('.qd_pick_form');
-    const msg = pickbar.querySelector('.qd_pick_msg');
-    if (!pick.chosen) {
-        hl.classList.remove('qd_show');
-        form.classList.remove('qd_show');
-        msg.textContent = pick.kind === 'sc'
-            ? 'เปิดเมนูหรือหน้าต่างได้ตามปกติ แล้วกดค้างที่ปุ่มที่อยากทำเป็นช็อตคัท'
-            : 'กดค้างที่ปุ่มลอยของ extension ที่อยากเก็บเข้า dock';
-        return;
-    }
-    const el = pick.chosen;
-    msg.textContent = pick.kind === 'sc' ? 'ตั้งชื่อและไอคอน แล้วกดบันทึก' : 'ตั้งชื่อ แล้วกดบันทึก (ปุ่มจะย้ายเข้า dock ทันที)';
-    form.classList.add('qd_show');
-    form.classList.toggle('qd_tray_mode', pick.kind === 'tray');
-    const icon = iconOf(el);
-    const existing = pick.rebindId ? settings().shortcuts.find(x => x.id === pick.rebindId) : null;
-    pickbar.querySelector('.qd_pick_label').value = existing?.label ?? labelOf(el);
-    pickbar.querySelector('.qd_pick_icon').value = existing?.icon ?? icon;
-    pickbar.querySelector('.qd_pick_iconprev').className = `qd_pick_iconprev ${existing?.icon ?? icon}`;
-    const sel = pick.kind === 'tray' ? (buildSelector(el, { structural: false }) ?? buildSelector(el)) : buildSelector(el);
-    pickbar.querySelector('.qd_pick_sel').textContent = sel;
-    const steps = pickPath(sel);
-    pickbar.querySelector('.qd_pick_path').textContent = pick.kind === 'sc' && steps.length
-        ? `ถ้าปุ่มถูกซ่อนอยู่ จะกดเปิดเมนูให้ก่อน ${steps.length} ขั้น`
-        : (pick.kind === 'tray' && !buildSelector(el, { structural: false }) ? '⚠ ปุ่มนี้ไม่มี id ที่แน่นอน หลังรีโหลดอาจหาไม่เจอ' : '');
-    const r = el.getBoundingClientRect();
-    Object.assign(hl.style, { left: `${r.left - 3}px`, top: `${r.top - 3}px`, width: `${r.width + 6}px`, height: `${r.height + 6}px` });
-    hl.classList.add('qd_show');
-}
-
 const inPickbar = e => !!e.target?.closest?.('#qd_pickbar');
 const eat = e => { if (e.cancelable) e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
 
 function onPickDown(e) {
     if (!pick || inPickbar(e) || e.button > 0) return;
-    if (pick.eatUntil === Infinity) pick.eatUntil = 0; // the long-press never produced a pointerup
+    if (pick.chosen) { commitPick(); return; }            // previous press finished without a pointerup
+    if (pick.eatUntil === Infinity) pick.eatUntil = 0;
     clearTimeout(pick.timer);
     pick.down = { x: e.clientX, y: e.clientY, id: e.pointerId, target: e.target };
     pick.timer = setTimeout(fireLongPress, LONG_PRESS_MS);
@@ -827,26 +781,30 @@ function onPickMove(e) {
     }
 }
 
+/** Finger lifted after a successful long-press: swallow this release, then save. */
+function releaseAfterLongPress() {
+    pick.eatUntil = performance.now() + 450;
+    clearTimeout(pick.commitTimer);
+    pick.commitTimer = setTimeout(commitPick, 350);
+}
+
 function onPickUp(e) {
     if (!pick) return;
     if (pick.down && e.pointerId === pick.down.id) { clearTimeout(pick.timer); pick.down = null; }
-    if (pick.eatUntil === Infinity && !inPickbar(e)) {
-        pick.eatUntil = performance.now() + 450; // swallow the mouseup/touchend/click of this press
-        eat(e);
-    }
+    if (pick.eatUntil === Infinity && !inPickbar(e)) { eat(e); releaseAfterLongPress(); }
 }
 
 function onPickCancel(e) {
-    if (!pick) return;
-    if (pick.down && e.pointerId === pick.down.id && e.isTrusted) { clearTimeout(pick.timer); pick.down = null; }
-    if (pick.eatUntil === Infinity && e.isTrusted) pick.eatUntil = performance.now() + 450;
+    if (!pick || !e.isTrusted) return;
+    if (pick.down && e.pointerId === pick.down.id) { clearTimeout(pick.timer); pick.down = null; }
+    if (pick.eatUntil === Infinity) releaseAfterLongPress();
 }
 
 function onPickEat(e) {
     if (!pick || inPickbar(e)) return;
     if (e.type === 'contextmenu') { e.preventDefault(); return; }
     if (performance.now() < pick.eatUntil || pick.eatUntil === Infinity) { eat(e); return; }
-    if (e.type === 'click' && e.isTrusted && pick.kind === 'sc' && !pick.chosen && !isOwn(e.target)) {
+    if (e.type === 'click' && e.isTrusted && pick.kind === 'sc' && !isOwn(e.target)) {
         const el = clickableOf(e.target);
         if (!el) return;
         const sel = buildSelector(el);
@@ -875,32 +833,52 @@ function fireLongPress() {
     if (pick.kind === 'tray' && el.dataset.qdTray) { toast.info('ปุ่มนี้อยู่ใน dock แล้ว'); return; }
     navigator.vibrate?.(15);
     pick.chosen = el;
-    showPickState();
+    const r = el.getBoundingClientRect();
+    Object.assign(hl.style, { left: `${r.left - 3}px`, top: `${r.top - 3}px`, width: `${r.width + 6}px`, height: `${r.height + 6}px` });
+    hl.classList.add('qd_show');
+    pickbar.querySelector('.qd_pick_msg').textContent = 'ได้แล้ว — ยกนิ้วขึ้นเพื่อบันทึก';
+    // Safety net if the browser never reports the finger lifting.
+    clearTimeout(pick.commitTimer);
+    pick.commitTimer = setTimeout(commitPick, 4000);
 }
 
 function pickPath(targetSel) {
     return pick.path.filter(p => p !== targetSel).slice(-MAX_PATH);
 }
 
+/** Save the picked button straight away, then open the editor so it can be renamed. */
 function commitPick() {
     if (!pick?.chosen) return;
     const s = settings();
-    const el = pick.chosen;
-    const label = pickbar.querySelector('.qd_pick_label').value.trim() || labelOf(el);
-    if (pick.kind === 'sc') {
+    const { kind, rebindId, chosen: el } = pick;
+    let editId = null;
+    if (kind === 'sc') {
         const sel = buildSelector(el);
-        const icon = pickbar.querySelector('.qd_pick_icon').value.trim().replace(/[^\w\s-]/g, '') || iconOf(el);
-        const data = { label, icon, sel, path: pickPath(sel) };
-        const existing = pick.rebindId ? s.shortcuts.find(x => x.id === pick.rebindId) : null;
-        if (existing) Object.assign(existing, data); else s.shortcuts.push({ id: newId('s'), ...data });
+        const existing = rebindId ? s.shortcuts.find(x => x.id === rebindId) : null;
+        if (existing) {
+            Object.assign(existing, { sel, path: pickPath(sel) });
+            editId = existing.id;
+        } else {
+            editId = newId('s');
+            s.shortcuts.push({ id: editId, label: labelOf(el), icon: iconOf(el), sel, path: pickPath(sel) });
+        }
     } else {
         const sel = buildSelector(el, { structural: false }) ?? buildSelector(el);
-        if (s.tray.some(x => x.sel === sel)) toast.info('ปุ่มนี้อยู่ใน dock แล้ว');
-        else s.tray.push({ id: newId('t'), label, sel });
+        const dup = s.tray.find(x => x.sel === sel);
+        if (dup) {
+            toast.info('ปุ่มนี้อยู่ใน dock แล้ว');
+            editId = dup.id;
+        } else {
+            editId = newId('t');
+            s.tray.push({ id: editId, label: labelOf(el), sel });
+            if (!buildSelector(el, { structural: false })) toast.warn('ปุ่มนี้ไม่มี id ที่แน่นอน หลังรีโหลดอาจหาไม่เจอ');
+        }
     }
     save();
     endPick();
     openPanel();
+    setEditing(true);
+    openEditor(kind, editId);
     renderSettingsLists();
 }
 
