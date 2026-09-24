@@ -1,34 +1,67 @@
 /*
  * Quick Dock — SillyTavern UI extension
  *
- * One floating button instead of many. Tapping it opens a small panel with
- *   • shortcuts — any SillyTavern button, recorded by long-pressing it once;
- *     if the button lives inside a closed menu, the taps that opened the menu
- *     are replayed first;
- *   • a tray — other extensions' floating buttons, moved into the panel so
- *     they stop covering the chat (they keep working and keep their status).
+ * One floating button instead of many. Tapping it opens
+ *   • shortcuts — fanned out in an arc around the button (thumb reach), or in
+ *     a grid. A shortcut is either a built-in jump (top message, latest
+ *     message, latest bot reply) or any SillyTavern button, recorded by
+ *     long-pressing it once; if that button lives inside a closed menu, the
+ *     taps that opened the menu are replayed first;
+ *   • a tray card — other extensions' floating buttons, moved in so they stop
+ *     covering the chat (they keep working and keep their status).
  */
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const EDGE_MARGIN = 8;       // px between the launcher/panel and the screen edge
+const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
 const MOVE_TOLERANCE = 10;   // px a finger may wobble during a long press
 const MAX_PATH = 3;          // menu-opening taps remembered per shortcut
 
+// Arc geometry (px)
+const ARC_ITEM = 46;         // button diameter
+const ARC_LABEL = 14;        // label height under the button
+const ARC_SPAN = 60;         // distance between neighbouring button centres
+const ARC_RING_GAP = 64;     // distance between rings
+const ARC_MAX_RINGS = 3;     // beyond ~190px the thumb stops reaching; the rest go into the card
+
 const DEFAULTS = Object.freeze({
     enabled: true,
-    size: 46,                        // launcher diameter, px
+    layout: 'arc',                   // 'arc' | 'grid'
+    showLabels: true,
+    size: 46,                        // launcher diameter
     icon: 'fa-solid fa-bolt',
     columns: 4,
     closeOnShortcut: true,
     closeOnTray: true,
     statusDot: true,
     pickbarBottom: false,
-    pos: Object.freeze({ x: 1, y: 0.35, edge: 'right' }),
-    shortcuts: Object.freeze([]),    // { id, label, icon, sel, path: [sel] }
+    builtinsSeeded: false,
+    pos: Object.freeze({ x: 1, y: 0.8, edge: 'right' }),
+    shortcuts: Object.freeze([]),    // { id, label, icon, sel, path } | { id, label, icon, builtin }
     tray: Object.freeze([]),         // { id, label, sel }
 });
+
+const BUILTINS = Object.freeze({
+    top: { label: 'บนสุด', icon: 'fa-solid fa-angles-up', hint: 'ข้อความแรกของแชท' },
+    last: { label: 'ล่าสุด', icon: 'fa-solid fa-angles-down', hint: 'ต้นข้อความล่าสุด' },
+    lastBot: { label: 'บอทตอบ', icon: 'fa-solid fa-robot', hint: 'ต้นข้อความล่าสุดที่บอทตอบ' },
+});
+
+const ICONS = [
+    '⚡', '✨', '🌙', '🌸', '🍀', '🐱', '🐾', '💜', '🔮', '📖', '🎲', '☕',
+    'fa-solid fa-bolt', 'fa-solid fa-star', 'fa-solid fa-heart', 'fa-solid fa-bars', 'fa-solid fa-grip',
+    'fa-solid fa-layer-group', 'fa-solid fa-wand-magic-sparkles', 'fa-solid fa-feather', 'fa-solid fa-pen-nib',
+    'fa-solid fa-book', 'fa-solid fa-book-open', 'fa-solid fa-book-atlas', 'fa-solid fa-scroll', 'fa-solid fa-bookmark',
+    'fa-solid fa-comment', 'fa-solid fa-comments', 'fa-solid fa-robot', 'fa-solid fa-user', 'fa-solid fa-face-smile',
+    'fa-solid fa-cat', 'fa-solid fa-paw', 'fa-solid fa-dragon', 'fa-solid fa-ghost', 'fa-solid fa-moon',
+    'fa-solid fa-sun', 'fa-solid fa-cloud', 'fa-solid fa-leaf', 'fa-solid fa-seedling', 'fa-solid fa-fire',
+    'fa-solid fa-snowflake', 'fa-solid fa-gem', 'fa-solid fa-crown', 'fa-solid fa-dice', 'fa-solid fa-puzzle-piece',
+    'fa-solid fa-gamepad', 'fa-solid fa-music', 'fa-solid fa-image', 'fa-solid fa-palette', 'fa-solid fa-sliders',
+    'fa-solid fa-gear', 'fa-solid fa-plug', 'fa-solid fa-globe', 'fa-solid fa-magnifying-glass', 'fa-solid fa-rotate-right',
+    'fa-solid fa-floppy-disk', 'fa-solid fa-clock-rotate-left', 'fa-solid fa-angles-up', 'fa-solid fa-angles-down',
+    'fa-solid fa-reply', 'fa-solid fa-paper-plane', 'fa-solid fa-trash', 'fa-solid fa-circle-dot',
+];
 
 // ---------------------------------------------------------------- helpers
 
@@ -43,6 +76,11 @@ function settings() {
     }
     if (!Array.isArray(s.shortcuts)) s.shortcuts = [];
     if (!Array.isArray(s.tray)) s.tray = [];
+    if (!s.builtinsSeeded) {
+        s.builtinsSeeded = true;
+        const add = Object.keys(BUILTINS).filter(b => !s.shortcuts.some(x => x.builtin === b));
+        s.shortcuts.unshift(...add.map(b => ({ id: `b_${b}`, builtin: b, label: BUILTINS[b].label, icon: BUILTINS[b].icon })));
+    }
     return s;
 }
 
@@ -59,14 +97,37 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const newId = p => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+/** Layout viewport — does not shrink when the on-screen keyboard opens, so the launcher stays put. */
 function viewportSize() {
-    const vv = window.visualViewport;
-    return { vw: vv?.width ?? window.innerWidth, vh: vv?.height ?? window.innerHeight };
+    const de = document.documentElement;
+    return { vw: de.clientWidth || window.innerWidth, vh: de.clientHeight || window.innerHeight };
 }
+
+/** The part of the page actually visible right now (above the keyboard), in fixed-position coordinates. */
+function visibleArea() {
+    const vv = window.visualViewport;
+    const { vw, vh } = viewportSize();
+    return vv ? { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height } : { x: 0, y: 0, w: vw, h: vh };
+}
+
+/** Font Awesome classes → <i>; anything else (emoji, a letter) → text. */
+function iconHTML(icon) {
+    const v = String(icon ?? '').trim();
+    if (/(^|\s)fa-/.test(v)) return `<i class="${esc(v)}"></i>`;
+    return `<span class="qd_emoji">${esc(v || '•')}</span>`;
+}
+
+function cleanIcon(v) {
+    v = String(v ?? '').trim();
+    if (/(^|\s)fa-/.test(v)) return v.replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ');
+    return v.slice(0, 8);
+}
+
+const iconGridHTML = () => ICONS.map(ic => `<div class="qd_ic" role="button" tabindex="0" data-icon="${esc(ic)}" title="${esc(ic)}">${iconHTML(ic)}</div>`).join('');
 
 // ---------------------------------------------------------------- finding elements
 
-const OWN = '#qd_launcher, #qd_panel, #qd_pickbar, #qd_hl';
+const OWN = '#qd_launcher, #qd_panel, #qd_arc, #qd_pickbar, #qd_hl';
 const isOwn = el => !!el?.closest?.(OWN);
 
 function isShown(el) {
@@ -199,34 +260,53 @@ function iconOf(el) {
 // ---------------------------------------------------------------- UI skeleton
 
 let launcher = null;
-let panel = null;
+let panel = null;         // the card: tray, editor, add menu, bar (+ grid in grid layout)
+let arc = null;           // shortcut buttons fanned around the launcher
 let editing = false;
-let edit = null;          // { kind: 'sc' | 'tray', id } being edited
+let edit = null;          // { kind: 'sc' | 'tray' | 'launcher', id }
+let arcSlots = [];        // [{ x, y }] centres of the arc buttons, in shortcut order
 const slots = new Map();  // tray id -> slot element
 const live = new Map();   // tray id -> { el, home: { parent, next }, obs }
+
+const isOpen = () => !!panel?.classList.contains('qd_open');
 
 function buildUI() {
     launcher = document.createElement('div');
     launcher.id = 'qd_launcher';
     launcher.setAttribute('role', 'button');
     launcher.tabIndex = 0;
-    launcher.title = 'Quick Dock — แตะเพื่อเปิด · ลากเพื่อย้าย';
-    launcher.innerHTML = '<i></i>';
+    launcher.title = 'Quick Dock — แตะเพื่อเปิด · ลากเพื่อย้าย · กดค้างเพื่อเปลี่ยนไอคอน';
     launcher.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePanel(); } });
-    makeDraggable(launcher, () => (pick ? endPick() : togglePanel())); // during pick mode: cancel
+    makeDraggable(launcher, {
+        onTap: () => (pick ? endPick() : togglePanel()), // during pick mode: cancel
+        onLong: () => { if (pick) return; openPanel(); setEditing(true); openEditor('launcher', null); },
+    });
+
+    arc = document.createElement('div');
+    arc.id = 'qd_arc';
+    arc.addEventListener('click', e => {
+        const item = e.target.closest('.qd_arc_item');
+        if (item) onShortcutTap(item.dataset.id);
+    });
 
     panel = document.createElement('div');
     panel.id = 'qd_panel';
     panel.innerHTML = `
-        <div class="qd_grid"></div>
         <div class="qd_tray"></div>
+        <div class="qd_grid"></div>
         <div class="qd_hint"></div>
+        <div class="qd_addmenu">
+            <div class="qd_addbtn" data-add="pick" role="button" tabindex="0"><i class="fa-solid fa-crosshairs"></i> เลือกปุ่มบนจอ (กดค้าง)</div>
+            ${Object.entries(BUILTINS).map(([k, b]) => `<div class="qd_addbtn" data-add="${k}" role="button" tabindex="0">${iconHTML(b.icon)} ${esc(b.hint)}</div>`).join('')}
+        </div>
         <div class="qd_editor">
-            <input type="text" class="text_pole qd_ed_label" placeholder="ชื่อ">
+            <div class="qd_ed_title"></div>
+            <input type="text" class="text_pole qd_ed_label" placeholder="ชื่อ" enterkeyhint="done">
             <div class="qd_ed_iconrow">
-                <i class="qd_ed_iconprev"></i>
-                <input type="text" class="text_pole qd_ed_icon" placeholder="ไอคอน เช่น fa-solid fa-star">
+                <span class="qd_ed_iconprev"></span>
+                <input type="text" class="text_pole qd_ed_icon" placeholder="อีโมจิ หรือ fa-solid fa-star" enterkeyhint="done">
             </div>
+            <div class="qd_icongrid">${iconGridHTML()}</div>
             <div class="qd_ed_btns">
                 <div class="menu_button qd_ed_left" title="เลื่อนไปก่อน"><i class="fa-solid fa-arrow-left"></i></div>
                 <div class="menu_button qd_ed_right" title="เลื่อนไปหลัง"><i class="fa-solid fa-arrow-right"></i></div>
@@ -236,17 +316,15 @@ function buildUI() {
             </div>
         </div>
         <div class="qd_bar">
-            <div class="qd_barbtn" data-act="add-sc" role="button" tabindex="0" title="เพิ่มช็อตคัท: กดค้างที่ปุ่มไหนก็ได้"><i class="fa-solid fa-plus"></i><span>ช็อตคัท</span></div>
+            <div class="qd_barbtn" data-act="add-sc" role="button" tabindex="0" title="เพิ่มช็อตคัท"><i class="fa-solid fa-plus"></i><span>ช็อตคัท</span></div>
             <div class="qd_barbtn" data-act="add-tray" role="button" tabindex="0" title="เก็บปุ่มลอยของ extension อื่นเข้า dock"><i class="fa-solid fa-inbox"></i><span>ปุ่มลอย</span></div>
+            <div class="qd_barbtn qd_launcherbtn" data-act="launcher-icon" role="button" tabindex="0" title="เปลี่ยนไอคอนปุ่มหลัก"><span class="qd_launcherprev"></span><span>ปุ่มหลัก</span></div>
             <div class="qd_barbtn qd_editbtn" data-act="edit" role="button" tabindex="0" title="แก้ไข / จัดลำดับ / ลบ"><i class="fa-solid fa-pen"></i></div>
         </div>`;
 
     panel.querySelector('.qd_grid').addEventListener('click', e => {
         const item = e.target.closest('.qd_sc');
-        if (!item) return;
-        const sc = settings().shortcuts.find(x => x.id === item.dataset.id);
-        if (!sc) return;
-        if (editing) openEditor('sc', sc.id); else runShortcut(sc);
+        if (item) onShortcutTap(item.dataset.id);
     });
     panel.querySelector('.qd_tray').addEventListener('click', e => {
         const slot = e.target.closest('.qd_slot');
@@ -256,38 +334,64 @@ function buildUI() {
     });
     panel.querySelector('.qd_bar').addEventListener('click', e => {
         const act = e.target.closest('[data-act]')?.dataset.act;
-        if (act === 'add-sc') startPick('sc');
+        if (act === 'add-sc') toggleAddMenu();
         if (act === 'add-tray') startPick('tray');
         if (act === 'edit') setEditing(!editing);
+        if (act === 'launcher-icon') openEditor('launcher', null);
+    });
+    panel.querySelector('.qd_addmenu').addEventListener('click', e => {
+        const add = e.target.closest('[data-add]')?.dataset.add;
+        if (!add) return;
+        panel.querySelector('.qd_addmenu').classList.remove('qd_show');
+        if (add === 'pick') { startPick('sc'); return; }
+        const s = settings();
+        if (!s.shortcuts.some(x => x.builtin === add)) {
+            s.shortcuts.unshift({ id: newId('b'), builtin: add, label: BUILTINS[add].label, icon: BUILTINS[add].icon });
+            save();
+            renderSettingsLists();
+        }
+        renderPanel();
     });
     wireEditor();
 
-    document.body.append(launcher, panel);
+    // Keep the card above the on-screen keyboard while a field is being edited.
+    panel.addEventListener('focusin', () => setTimeout(placePanel, 60));
+    panel.addEventListener('focusout', () => setTimeout(placePanel, 120));
+
+    document.body.append(launcher, arc, panel);
 
     // Close when tapping elsewhere.
     document.addEventListener('pointerdown', e => {
-        if (!panel.classList.contains('qd_open')) return;
-        if (panel.contains(e.target) || launcher.contains(e.target)) return;
+        if (!isOpen()) return;
+        if (panel.contains(e.target) || launcher.contains(e.target) || arc.contains(e.target)) return;
         closePanel();
     }, true);
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
         if (pick) endPick();
-        else if (panel.classList.contains('qd_open')) closePanel();
+        else if (isOpen()) closePanel();
     });
 
-    const reflow = () => { placeLauncher(); if (panel.classList.contains('qd_open')) placePanel(); };
+    const reflow = () => {
+        placeLauncher();
+        if (!isOpen()) return;
+        if (isTyping()) placePanel(); else renderPanel();
+    };
     window.addEventListener('resize', reflow);
     window.visualViewport?.addEventListener('resize', reflow);
+    window.visualViewport?.addEventListener('scroll', () => { if (isOpen() && isTyping()) placePanel(); });
 }
 
 function applyLook() {
     const s = settings();
     launcher.style.setProperty('--qd-size', `${clamp(Number(s.size) || DEFAULTS.size, 28, 90)}px`);
-    launcher.querySelector('i').className = s.icon || DEFAULTS.icon;
+    launcher.innerHTML = iconHTML(s.icon || DEFAULTS.icon);
+    panel.querySelector('.qd_launcherprev').innerHTML = iconHTML(s.icon || DEFAULTS.icon);
     panel.style.setProperty('--qd-cols', clamp(Number(s.columns) || DEFAULTS.columns, 2, 8));
     launcher.classList.toggle('qd_off', !s.enabled);
+    arc.classList.toggle('qd_nolabels', !s.showLabels);
     placeLauncher();
+    updateBadge();
 }
 
 // ---------------------------------------------------------------- launcher position & drag
@@ -295,7 +399,7 @@ function applyLook() {
 function normPos(p) {
     const x = clamp(Number(p?.x), 0, 1), y = clamp(Number(p?.y), 0, 1);
     const edge = ['left', 'right', 'top', 'bottom'].includes(p?.edge) ? p.edge : null;
-    return { x: Number.isFinite(x) ? x : 1, y: Number.isFinite(y) ? y : 0.35, edge };
+    return { x: Number.isFinite(x) ? x : 1, y: Number.isFinite(y) ? y : 0.8, edge };
 }
 
 function placeLauncher() {
@@ -333,21 +437,26 @@ function snapLauncher() {
     save();
 }
 
-function makeDraggable(el, onTap) {
+function makeDraggable(el, { onTap, onLong }) {
     let start = null;
     let dragged = false;
+    let longTimer = null;
+    let longFired = false;
     el.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
         const r = el.getBoundingClientRect();
         start = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, id: e.pointerId };
         dragged = false;
+        longFired = false;
+        clearTimeout(longTimer);
+        longTimer = setTimeout(() => { if (start && !dragged) { longFired = true; navigator.vibrate?.(15); onLong?.(); } }, 600);
         try { el.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
     });
     el.addEventListener('pointermove', e => {
-        if (!start || e.pointerId !== start.id) return;
+        if (!start || e.pointerId !== start.id || longFired) return;
         const dx = e.clientX - start.x, dy = e.clientY - start.y;
         if (!dragged && Math.hypot(dx, dy) < 6) return;
-        if (!dragged) closePanel();
+        if (!dragged) { clearTimeout(longTimer); closePanel(); }
         dragged = true;
         el.classList.add('qd_dragging');
         const { vw, vh } = viewportSize();
@@ -356,8 +465,10 @@ function makeDraggable(el, onTap) {
     });
     const end = e => {
         if (!start || e.pointerId !== start.id) return;
+        clearTimeout(longTimer);
         try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
         start = null;
+        if (longFired) return;
         if (!dragged) { if (e.type === 'pointerup') onTap(); return; }
         el.classList.remove('qd_dragging');
         if (e.type === 'pointerup') snapLauncher();
@@ -365,68 +476,66 @@ function makeDraggable(el, onTap) {
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
+    el.addEventListener('contextmenu', e => e.preventDefault());
 }
 
-// ---------------------------------------------------------------- panel
+// ---------------------------------------------------------------- open / close / render
 
 function togglePanel() {
-    if (panel.classList.contains('qd_open')) closePanel(); else openPanel();
+    if (isOpen()) closePanel(); else openPanel();
 }
 
 function openPanel() {
     if (!settings().enabled) return;
-    renderPanel();
     panel.classList.add('qd_open');
+    arc.classList.add('qd_open');
     launcher.classList.add('qd_active');
-    placePanel();
+    renderPanel();
 }
 
 function closePanel() {
     if (!panel) return;
+    if (panel.contains(document.activeElement)) document.activeElement.blur();
     panel.classList.remove('qd_open');
+    arc.classList.remove('qd_open');
     launcher?.classList.remove('qd_active');
+    panel.querySelector('.qd_addmenu').classList.remove('qd_show');
     setEditing(false);
 }
 
-/** Beside the launcher when there is room, otherwise above/below it; always on screen. */
-function placePanel() {
-    const { vw, vh } = viewportSize();
-    panel.style.maxWidth = `${vw - 2 * EDGE_MARGIN}px`;
-    panel.style.maxHeight = `${vh - 2 * EDGE_MARGIN}px`;
-    const l = launcher.getBoundingClientRect();
-    const w = panel.offsetWidth, h = panel.offsetHeight, gap = 8;
-    const roomLeft = l.left - gap - EDGE_MARGIN;
-    const roomRight = vw - l.right - gap - EDGE_MARGIN;
-    const onRight = l.left + l.width / 2 > vw / 2;
-    let left, top;
-    if (roomLeft >= w || roomRight >= w) {
-        const goLeft = onRight ? roomLeft >= w : roomRight < w;
-        left = goLeft ? l.left - gap - w : l.right + gap;
-        top = l.top + l.height / 2 - h / 2;
-    } else {
-        const below = vh - l.bottom - gap - EDGE_MARGIN;
-        const above = l.top - gap - EDGE_MARGIN;
-        top = below >= h || below >= above ? l.bottom + gap : l.top - gap - h;
-        left = l.left + l.width / 2 - w / 2;
-    }
-    panel.style.left = `${Math.round(clamp(left, EDGE_MARGIN, vw - w - EDGE_MARGIN))}px`;
-    panel.style.top = `${Math.round(clamp(top, EDGE_MARGIN, vh - h - EDGE_MARGIN))}px`;
+function toggleAddMenu() {
+    const menu = panel.querySelector('.qd_addmenu');
+    const s = settings();
+    menu.querySelectorAll('[data-add]').forEach(b => {
+        b.hidden = b.dataset.add !== 'pick' && s.shortcuts.some(x => x.builtin === b.dataset.add);
+    });
+    menu.classList.toggle('qd_show');
+    placePanel();
+}
+
+function shortcutHTML(sc, cls) {
+    const sel = editing && edit?.id === sc.id ? ' qd_sel' : '';
+    return `<div class="${cls}${sel}" role="button" tabindex="0" data-id="${esc(sc.id)}" title="${esc(sc.label)}">
+        <div class="qd_btnface">${iconHTML(sc.icon || 'fa-solid fa-circle-dot')}</div><span>${esc(sc.label)}</span></div>`;
 }
 
 function renderPanel() {
+    if (!panel) return;
     const s = settings();
-    const grid = panel.querySelector('.qd_grid');
-    grid.innerHTML = s.shortcuts.map(sc => `
-        <div class="qd_sc${edit?.id === sc.id ? ' qd_sel' : ''}" role="button" tabindex="0" data-id="${esc(sc.id)}" title="${esc(sc.label)}">
-            <i class="${esc(sc.icon || 'fa-solid fa-circle-dot')}"></i><span>${esc(sc.label)}</span>
-        </div>`).join('');
+    const useArc = s.layout === 'arc';
+    arcSlots = useArc ? computeArcSlots(s.shortcuts.length) : [];
+    const inArc = s.shortcuts.slice(0, arcSlots.length);
+    const inGrid = s.shortcuts.slice(arcSlots.length); // arc layout: whatever did not fit
+    arc.innerHTML = inArc.map(sc => shortcutHTML(sc, 'qd_arc_item')).join('');
+    panel.querySelector('.qd_grid').innerHTML = inGrid.map(sc => shortcutHTML(sc, 'qd_sc')).join('');
     renderTray();
     const hint = panel.querySelector('.qd_hint');
     hint.textContent = editing
         ? 'แตะรายการเพื่อแก้ชื่อ ไอคอน ลำดับ หรือลบ'
-        : (!s.shortcuts.length && !s.tray.length ? 'ยังว่างอยู่ — กด “ช็อตคัท” แล้วกดค้างที่ปุ่มไหนก็ได้ หรือกด “ปุ่มลอย” เพื่อเก็บปุ่มของ extension อื่น' : '');
+        : (!s.shortcuts.length && !s.tray.length ? 'ยังว่างอยู่ — กด “ช็อตคัท” หรือ “ปุ่มลอย” ด้านล่าง' : '');
     panel.classList.toggle('qd_editing', editing);
-    if (panel.classList.contains('qd_open')) placePanel();
+    arc.classList.toggle('qd_editing', editing);
+    placePanel();
 }
 
 function setEditing(on) {
@@ -434,14 +543,130 @@ function setEditing(on) {
     if (!editing) edit = null;
     if (!panel) return;
     panel.classList.toggle('qd_editing', editing);
-    panel.querySelector('.qd_editor').classList.remove('qd_show');
-    if (panel.classList.contains('qd_open')) renderPanel();
+    arc.classList.toggle('qd_editing', editing);
+    if (!editing) panel.querySelector('.qd_editor').classList.remove('qd_show');
+    if (isOpen()) renderPanel();
+}
+
+function onShortcutTap(id) {
+    const sc = settings().shortcuts.find(x => x.id === id);
+    if (!sc) return;
+    if (editing) openEditor('sc', sc.id); else runShortcut(sc);
+}
+
+// ---------------------------------------------------------------- placement
+
+const isTyping = () => !!panel && panel.contains(document.activeElement) && document.activeElement.matches('input, textarea');
+
+/**
+ * Button centres on rings around the launcher, filling the side that faces
+ * the middle of the screen — where the thumb reaches when the launcher sits
+ * at the edge the hand holds. Each ring's buttons are centred on that side.
+ */
+function computeArcSlots(n) {
+    if (!n || !launcher) return [];
+    const { vw, vh } = viewportSize();
+    const l = launcher.getBoundingClientRect();
+    const cx = l.left + l.width / 2, cy = l.top + l.height / 2;
+    const onRight = cx > vw / 2;
+    const label = settings().showLabels ? ARC_LABEL : 0;
+    const half = ARC_ITEM / 2;
+    const fits = (x, y) => x - half >= EDGE_MARGIN && x + half <= vw - EDGE_MARGIN
+        && y - half >= EDGE_MARGIN && y + half + label <= vh - EDGE_MARGIN;
+    const out = [];
+    for (let ring = 0; out.length < n && ring < ARC_MAX_RINGS; ring++) {
+        const R = l.width / 2 + half + 16 + ring * ARC_RING_GAP;
+        const step = ARC_SPAN / R;
+        // Sweep from pointing up, through pointing inward, to pointing down — reads top-to-bottom like the list.
+        const candidates = [];
+        for (let a = 0; a <= Math.PI + 1e-6; a += step) {
+            const theta = onRight ? 1.5 * Math.PI - a : -Math.PI / 2 + a;
+            const x = cx + R * Math.cos(theta), y = cy + R * Math.sin(theta);
+            if (fits(x, y)) candidates.push({ x, y });
+        }
+        const m = Math.min(n - out.length, candidates.length);
+        const from = Math.floor((candidates.length - m) / 2);
+        out.push(...candidates.slice(from, from + m));
+    }
+    return out;
+}
+
+function placeArc() {
+    const items = [...arc.children];
+    let box = null;
+    items.forEach((item, i) => {
+        const p = arcSlots[i];
+        if (!p) return;
+        item.style.left = `${Math.round(p.x - ARC_ITEM / 2)}px`;
+        item.style.top = `${Math.round(p.y - ARC_ITEM / 2)}px`;
+        const r = { l: p.x - 30, t: p.y - ARC_ITEM / 2, r: p.x + 30, b: p.y + ARC_ITEM / 2 + ARC_LABEL };
+        box = box ? { l: Math.min(box.l, r.l), t: Math.min(box.t, r.t), r: Math.max(box.r, r.r), b: Math.max(box.b, r.b) } : r;
+    });
+    return box;
+}
+
+function placePanel() {
+    if (!isOpen()) return;
+    const s = settings();
+    const typing = isTyping();
+    arc.classList.toggle('qd_hide', typing || s.layout !== 'arc');
+    panel.classList.toggle('qd_gridmode', s.layout !== 'arc');
+    if (typing) { placeCardAboveKeyboard(); return; }
+
+    const { vw, vh } = viewportSize();
+    panel.style.maxWidth = `${vw - 2 * EDGE_MARGIN}px`;
+    panel.style.maxHeight = `${vh - 2 * EDGE_MARGIN}px`;
+    const l = launcher.getBoundingClientRect();
+    const w = panel.offsetWidth, h = panel.offsetHeight, gap = 8;
+    const onRight = l.left + l.width / 2 > vw / 2;
+    let left, top;
+
+    const box = s.layout === 'arc' ? placeArc() : null;
+    if (box) {
+        // Card goes beyond the arc, on the launcher's side of the screen, away from the thumb.
+        const around = { t: Math.min(box.t, l.top), b: Math.max(box.b, l.bottom) };
+        left = onRight ? vw - EDGE_MARGIN - w : EDGE_MARGIN;
+        if (around.t - gap - h >= EDGE_MARGIN) top = around.t - gap - h;
+        else if (around.b + gap + h <= vh - EDGE_MARGIN) top = around.b + gap;
+        else top = around.t - gap - h; // no room: overlap as little as the clamp allows
+    } else {
+        const roomLeft = l.left - gap - EDGE_MARGIN;
+        const roomRight = vw - l.right - gap - EDGE_MARGIN;
+        if (roomLeft >= w || roomRight >= w) {
+            const goLeft = onRight ? roomLeft >= w : roomRight < w;
+            left = goLeft ? l.left - gap - w : l.right + gap;
+            top = l.top + l.height / 2 - h / 2;
+        } else {
+            const below = vh - l.bottom - gap - EDGE_MARGIN;
+            const above = l.top - gap - EDGE_MARGIN;
+            top = below >= h || below >= above ? l.bottom + gap : l.top - gap - h;
+            left = l.left + l.width / 2 - w / 2;
+        }
+    }
+    panel.style.left = `${Math.round(clamp(left, EDGE_MARGIN, Math.max(EDGE_MARGIN, vw - w - EDGE_MARGIN)))}px`;
+    panel.style.top = `${Math.round(clamp(top, EDGE_MARGIN, Math.max(EDGE_MARGIN, vh - h - EDGE_MARGIN)))}px`;
+}
+
+/** While typing: pin the card to the top of the visible area and scroll the editor into view inside it. */
+function placeCardAboveKeyboard() {
+    const a = visibleArea();
+    panel.style.maxWidth = `${a.w - 2 * EDGE_MARGIN}px`;
+    panel.style.maxHeight = `${Math.max(120, a.h - 2 * EDGE_MARGIN)}px`;
+    const w = panel.offsetWidth;
+    const curLeft = parseFloat(panel.style.left) || 0;
+    panel.style.left = `${Math.round(a.x + clamp(curLeft - a.x, EDGE_MARGIN, Math.max(EDGE_MARGIN, a.w - w - EDGE_MARGIN)))}px`;
+    panel.style.top = `${Math.round(a.y + EDGE_MARGIN)}px`;
+    const field = document.activeElement;
+    const ed = panel.querySelector('.qd_editor');
+    const target = ed.contains(field) ? field : ed;
+    panel.scrollTop = Math.max(0, target.offsetTop - 40);
 }
 
 // ---------------------------------------------------------------- editor
 
 function currentEditItem() {
     if (!edit) return null;
+    if (edit.kind === 'launcher') return settings();
     const list = edit.kind === 'sc' ? settings().shortcuts : settings().tray;
     return list.find(x => x.id === edit.id) ?? null;
 }
@@ -450,54 +675,72 @@ function openEditor(kind, id) {
     edit = { kind, id };
     const item = currentEditItem();
     if (!item) return;
+    if (!editing) { editing = true; }
     const ed = panel.querySelector('.qd_editor');
     ed.classList.add('qd_show');
-    ed.classList.toggle('qd_tray_mode', kind === 'tray');
-    ed.querySelector('.qd_ed_label').value = item.label ?? '';
+    ed.dataset.kind = kind;
+    ed.classList.toggle('qd_builtin', !!item.builtin);
+    ed.querySelector('.qd_ed_title').textContent = kind === 'launcher' ? 'ไอคอนปุ่มหลัก' : kind === 'tray' ? 'ปุ่มลอยใน dock' : item.builtin ? `ช็อตคัท: ${BUILTINS[item.builtin]?.hint ?? ''}` : 'ช็อตคัท';
+    ed.querySelector('.qd_ed_label').value = kind === 'launcher' ? '' : item.label ?? '';
     ed.querySelector('.qd_ed_icon').value = item.icon ?? '';
-    ed.querySelector('.qd_ed_iconprev').className = `qd_ed_iconprev ${item.icon ?? ''}`;
+    ed.querySelector('.qd_ed_iconprev').innerHTML = iconHTML(item.icon);
     const del = ed.querySelector('.qd_ed_del');
     del.innerHTML = kind === 'sc' ? '<i class="fa-solid fa-trash"></i>' : '<i class="fa-solid fa-arrow-up-from-bracket"></i> คืนหน้าจอ';
     del.title = kind === 'sc' ? 'ลบช็อตคัทนี้' : 'เอาปุ่มนี้ออกจาก dock กลับไปลอยบนจอเหมือนเดิม';
     renderPanel();
 }
 
+function setIcon(value) {
+    const item = currentEditItem();
+    if (!item || edit.kind === 'tray') return;
+    item.icon = cleanIcon(value) || (edit.kind === 'launcher' ? DEFAULTS.icon : 'fa-solid fa-circle-dot');
+    save();
+    const ed = panel.querySelector('.qd_editor');
+    ed.querySelector('.qd_ed_iconprev').innerHTML = iconHTML(item.icon);
+    if (edit.kind === 'launcher') {
+        applyLook();
+        syncSettingsIcon();
+    } else {
+        document.querySelectorAll(`#qd_arc [data-id="${CSS.escape(item.id)}"] .qd_btnface, #qd_panel .qd_sc[data-id="${CSS.escape(item.id)}"] .qd_btnface`)
+            .forEach(n => { n.innerHTML = iconHTML(item.icon); });
+        renderSettingsLists();
+    }
+}
+
 function wireEditor() {
     const ed = panel.querySelector('.qd_editor');
     ed.querySelector('.qd_ed_label').addEventListener('input', e => {
         const item = currentEditItem();
-        if (!item) return;
+        if (!item || edit.kind === 'launcher') return;
         item.label = e.target.value.trim() || item.label;
         save();
-        const node = edit.kind === 'sc'
-            ? panel.querySelector(`.qd_sc[data-id="${CSS.escape(item.id)}"] span`)
-            : panel.querySelector(`.qd_slot[data-id="${CSS.escape(item.id)}"] .qd_slot_ph`);
-        if (node) node.textContent = item.label;
+        document.querySelectorAll(`#qd_arc [data-id="${CSS.escape(item.id)}"] span, #qd_panel .qd_sc[data-id="${CSS.escape(item.id)}"] span, #qd_panel .qd_slot[data-id="${CSS.escape(item.id)}"] .qd_slot_ph`)
+            .forEach(n => { n.textContent = item.label; });
     });
-    ed.querySelector('.qd_ed_icon').addEventListener('input', e => {
-        const item = currentEditItem();
-        if (!item || edit.kind !== 'sc') return;
-        const v = e.target.value.trim().replace(/[^\w\s-]/g, '');
-        item.icon = v || 'fa-solid fa-circle-dot';
-        save();
-        ed.querySelector('.qd_ed_iconprev').className = `qd_ed_iconprev ${item.icon}`;
-        const i = panel.querySelector(`.qd_sc[data-id="${CSS.escape(item.id)}"] i`);
-        if (i) i.className = item.icon;
+    ed.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); }));
+    ed.querySelector('.qd_ed_icon').addEventListener('input', e => setIcon(e.target.value));
+    ed.querySelector('.qd_icongrid').addEventListener('click', e => {
+        const ic = e.target.closest('[data-icon]')?.dataset.icon;
+        if (!ic) return;
+        ed.querySelector('.qd_ed_icon').value = ic;
+        setIcon(ic);
     });
     const move = d => {
-        const list = edit?.kind === 'sc' ? settings().shortcuts : settings().tray;
-        const i = list.findIndex(x => x.id === edit?.id);
+        const list = edit?.kind === 'sc' ? settings().shortcuts : edit?.kind === 'tray' ? settings().tray : null;
+        if (!list) return;
+        const i = list.findIndex(x => x.id === edit.id);
         const j = i + d;
         if (i < 0 || j < 0 || j >= list.length) return;
         [list[i], list[j]] = [list[j], list[i]];
         save();
         renderPanel();
+        renderSettingsLists();
     };
     ed.querySelector('.qd_ed_left').addEventListener('click', () => move(-1));
     ed.querySelector('.qd_ed_right').addEventListener('click', () => move(1));
     ed.querySelector('.qd_ed_rebind').addEventListener('click', () => { if (edit?.kind === 'sc') startPick('sc', edit.id); });
     ed.querySelector('.qd_ed_del').addEventListener('click', () => {
-        if (!edit) return;
+        if (!edit || edit.kind === 'launcher') return;
         if (edit.kind === 'sc') removeShortcut(edit.id); else removeTrayItem(edit.id);
         edit = null;
         ed.classList.remove('qd_show');
@@ -505,6 +748,7 @@ function wireEditor() {
         renderSettingsLists();
     });
     ed.querySelector('.qd_ed_done').addEventListener('click', () => {
+        if (panel.contains(document.activeElement)) document.activeElement.blur();
         edit = null;
         ed.classList.remove('qd_show');
         renderPanel();
@@ -528,8 +772,49 @@ async function waitFor(fn, ms) {
     }
 }
 
+/** Scroll the chat so the start of `mes` sits at the top. Re-checked briefly, as images/rendering can shift it. */
+function scrollToMessage(mes) {
+    const chat = document.getElementById('chat');
+    if (!chat || !mes) return;
+    const go = () => {
+        const top = mes.getBoundingClientRect().top - chat.getBoundingClientRect().top + chat.scrollTop;
+        chat.scrollTo({ top: Math.max(0, top - 4), behavior: 'auto' });
+    };
+    go();
+    requestAnimationFrame(go);
+    setTimeout(go, 250);
+}
+
+async function runBuiltin(kind) {
+    const chat = document.getElementById('chat');
+    const messages = () => (chat ? [...chat.querySelectorAll(':scope > .mes')] : []);
+    let target = null;
+    if (kind === 'top') {
+        const first = messages()[0];
+        if (first && Number(first.getAttribute('mesid')) > 0) {
+            // Older messages aren't rendered yet; SillyTavern's /chat-jump loads them first.
+            const c = ctx();
+            if (typeof c.executeSlashCommandsWithOptions === 'function') {
+                await c.executeSlashCommandsWithOptions('/chat-jump 0', { handleParserErrors: true, handleExecutionErrors: true });
+                return;
+            }
+        }
+        target = messages()[0];
+    } else if (kind === 'last') {
+        target = messages().at(-1);
+    } else if (kind === 'lastBot') {
+        target = messages().filter(m => m.getAttribute('is_user') === 'false' && m.getAttribute('is_system') !== 'true').at(-1);
+    }
+    if (!target) {
+        toast.info(kind === 'lastBot' ? 'ยังไม่มีข้อความที่บอทตอบ' : 'ยังไม่มีข้อความในแชทนี้');
+        return;
+    }
+    scrollToMessage(target);
+}
+
 async function runShortcut(sc) {
     if (settings().closeOnShortcut) closePanel();
+    if (sc.builtin) { await runBuiltin(sc.builtin); return; }
     let el = queryShown(sc.sel);
     // Target inside a closed menu? Replay the taps that opened it, stopping as soon as it shows.
     for (const step of (el ? [] : sc.path ?? [])) {
@@ -570,7 +855,7 @@ function renderTray() {
     }
     for (const item of s.tray) {
         const slot = slotFor(item);
-        slot.classList.toggle('qd_sel', edit?.id === item.id);
+        slot.classList.toggle('qd_sel', editing && edit?.id === item.id);
         tray.appendChild(slot); // appending in order also re-orders
     }
     syncTray();
@@ -602,7 +887,7 @@ function release(id) {
         const next = home.next?.parentNode === parent ? home.next : null;
         parent.insertBefore(el, next);
     }
-    window.dispatchEvent(new Event('resize')); // let its extension re-position it
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 0); // let its extension re-position it
 }
 
 function releaseAll() {
@@ -611,12 +896,12 @@ function releaseAll() {
 }
 
 function removeTrayItem(id) {
+    const s = settings();
+    s.tray = s.tray.filter(x => x.id !== id); // first, so nothing re-adopts it while it is being released
+    save();
     release(id);
     slots.get(id)?.remove();
     slots.delete(id);
-    const s = settings();
-    s.tray = s.tray.filter(x => x.id !== id);
-    save();
     updateBadge();
 }
 
@@ -653,7 +938,6 @@ function updateTrayVisibility() {
         any ||= !gone;
     }
     panel.querySelector('.qd_tray').classList.toggle('qd_empty', !any);
-    if (panel.classList.contains('qd_open')) placePanel();
 }
 
 /** Dot on the launcher when a tray button reports trouble (data-state="attention", as Chat Auto Backup does). */
@@ -727,8 +1011,8 @@ function startPick(kind, rebindId = null) {
     pickbar.classList.toggle('qd_bottom', !!settings().pickbarBottom);
     for (const [type, fn] of Object.entries(PICK_EVENTS)) window.addEventListener(type, fn, { capture: true, passive: false });
     pickbar.querySelector('.qd_pick_msg').textContent = kind === 'sc'
-        ? 'เปิดเมนูได้ตามปกติ แล้วกดค้างที่ปุ่มที่อยากทำเป็นช็อตคัท · แตะปุ่ม ⚡ เพื่อยกเลิก'
-        : 'กดค้างที่ปุ่มลอยที่อยากเก็บเข้า dock · แตะปุ่ม ⚡ เพื่อยกเลิก';
+        ? 'เปิดเมนูได้ตามปกติ แล้วกดค้างที่ปุ่มที่อยากทำเป็นช็อตคัท · แตะปุ่มหลักเพื่อยกเลิก'
+        : 'กดค้างที่ปุ่มลอยที่อยากเก็บเข้า dock · แตะปุ่มหลักเพื่อยกเลิก';
     hl.classList.remove('qd_show');
     if (kind === 'tray') dodgeFloating();
 }
@@ -857,6 +1141,7 @@ function commitPick() {
         const existing = rebindId ? s.shortcuts.find(x => x.id === rebindId) : null;
         if (existing) {
             Object.assign(existing, { sel, path: pickPath(sel) });
+            delete existing.builtin;
             editId = existing.id;
         } else {
             editId = newId('s');
@@ -896,13 +1181,23 @@ function renderSettings() {
             <div class="inline-drawer-content">
                 <label class="checkbox_label"><input type="checkbox" id="qd_enabled"> เปิดใช้ Quick Dock</label>
                 <div class="qd_set_grid">
+                    <label for="qd_layout">รูปแบบช็อตคัท</label>
+                    <select id="qd_layout" class="text_pole">
+                        <option value="arc">วงโค้งรอบปุ่ม (นิ้วโป้ง)</option>
+                        <option value="grid">แผงตาราง</option>
+                    </select>
                     <label for="qd_size">ขนาดปุ่มหลัก (px)</label>
                     <input type="number" id="qd_size" class="text_pole" min="28" max="90" step="1">
-                    <label for="qd_cols">ช็อตคัทต่อแถว</label>
+                    <label for="qd_cols">ช็อตคัทต่อแถว (แผงตาราง)</label>
                     <input type="number" id="qd_cols" class="text_pole" min="2" max="8" step="1">
-                    <label for="qd_icon">ไอคอนปุ่มหลัก</label>
-                    <input type="text" id="qd_icon" class="text_pole" placeholder="fa-solid fa-bolt">
                 </div>
+                <div class="qd_set_title">ไอคอนปุ่มหลัก</div>
+                <div class="qd_set_iconrow">
+                    <span id="qd_icon_prev" class="qd_set_iconprev"></span>
+                    <input type="text" id="qd_icon" class="text_pole" placeholder="อีโมจิ หรือ fa-solid fa-bolt">
+                </div>
+                <div id="qd_icon_grid" class="qd_icongrid">${iconGridHTML()}</div>
+                <label class="checkbox_label"><input type="checkbox" id="qd_labels"> แสดงชื่อใต้ไอคอนช็อตคัท</label>
                 <label class="checkbox_label"><input type="checkbox" id="qd_close_sc"> ปิดแผงหลังกดช็อตคัท</label>
                 <label class="checkbox_label"><input type="checkbox" id="qd_close_tray"> ปิดแผงหลังกดปุ่มลอยใน dock</label>
                 <label class="checkbox_label" title="เช่น Chat Auto Backup ขึ้น Attention! ปุ่มหลักจะมีจุดแดงกระพริบ แม้ปิดแผงอยู่"><input type="checkbox" id="qd_dot"> จุดแจ้งสถานะบนปุ่มหลัก</label>
@@ -910,14 +1205,14 @@ function renderSettings() {
                     <div id="qd_add_sc" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มช็อตคัท</div>
                     <div id="qd_add_tray" class="menu_button"><i class="fa-solid fa-inbox"></i> เก็บปุ่มลอย</div>
                     <div id="qd_scan" class="menu_button" title="หาปุ่มลอยบนหน้าจอให้อัตโนมัติ"><i class="fa-solid fa-magnifying-glass"></i> ค้นหาปุ่มลอย</div>
-                    <div id="qd_reset_pos" class="menu_button" title="ย้ายปุ่มหลักกลับมากลางจอ"><i class="fa-solid fa-crosshairs"></i> รีเซ็ตตำแหน่ง</div>
+                    <div id="qd_reset_pos" class="menu_button" title="ย้ายปุ่มหลักไปมุมขวาล่าง"><i class="fa-solid fa-crosshairs"></i> รีเซ็ตตำแหน่ง</div>
                 </div>
                 <div id="qd_scan_result" class="qd_set_list"></div>
                 <div class="qd_set_title">ช็อตคัท</div>
                 <div id="qd_list_sc" class="qd_set_list"></div>
                 <div class="qd_set_title">ปุ่มลอยใน dock</div>
                 <div id="qd_list_tray" class="qd_set_list"></div>
-                <small class="qd_note">ลากปุ่มหลักไปวางตรงไหนก็ได้ ปล่อยแล้วจะดูดติดขอบจอ · ในแผงกดปุ่มดินสอเพื่อแก้ชื่อ ไอคอน ลำดับ</small>
+                <small class="qd_note">ถือมือถือมือขวา: ลากปุ่มหลักไปขอบขวาล่าง ช็อตคัทจะกางเป็นวงโค้งในระยะนิ้วโป้ง · ช็อตคัทแรก ๆ อยู่ใกล้นิ้วที่สุด · กดค้างปุ่มหลักเพื่อเปลี่ยนไอคอน</small>
             </div>
         </div>
     </div>`;
@@ -938,27 +1233,45 @@ function renderSettings() {
             e.target.value = s[key];
             save();
             applyLook();
-            if (panel.classList.contains('qd_open')) placePanel();
+            if (isOpen()) renderPanel();
         });
     };
     bindCheck('qd_enabled', 'enabled', () => { applyLook(); if (s.enabled) syncTray(); else { closePanel(); releaseAll(); } });
+    bindCheck('qd_labels', 'showLabels', () => { applyLook(); if (isOpen()) renderPanel(); });
     bindCheck('qd_close_sc', 'closeOnShortcut');
     bindCheck('qd_close_tray', 'closeOnTray');
     bindCheck('qd_dot', 'statusDot', updateBadge);
     bindNum('qd_size', 'size', 28, 90);
     bindNum('qd_cols', 'columns', 2, 8);
-    $('qd_icon').value = s.icon;
-    $('qd_icon').addEventListener('change', e => {
-        s.icon = e.target.value.trim().replace(/[^\w\s-]/g, '') || DEFAULTS.icon;
-        e.target.value = s.icon;
+    $('qd_layout').value = s.layout;
+    $('qd_layout').addEventListener('change', e => { s.layout = e.target.value === 'grid' ? 'grid' : 'arc'; save(); if (isOpen()) renderPanel(); });
+
+    const setLauncherIcon = v => {
+        s.icon = cleanIcon(v) || DEFAULTS.icon;
         save();
         applyLook();
+        syncSettingsIcon();
+    };
+    $('qd_icon').addEventListener('change', e => setLauncherIcon(e.target.value));
+    $('qd_icon_grid').addEventListener('click', e => {
+        const ic = e.target.closest('[data-icon]')?.dataset.icon;
+        if (ic) setLauncherIcon(ic);
     });
+    syncSettingsIcon();
+
     $('qd_add_sc').addEventListener('click', () => startPick('sc'));
     $('qd_add_tray').addEventListener('click', () => startPick('tray'));
-    $('qd_reset_pos').addEventListener('click', () => { s.pos = { x: 0.5, y: 0.5, edge: null }; save(); placeLauncher(); });
+    $('qd_reset_pos').addEventListener('click', () => { s.pos = { ...DEFAULTS.pos }; save(); placeLauncher(); });
     $('qd_scan').addEventListener('click', renderScan);
     renderSettingsLists();
+}
+
+function syncSettingsIcon() {
+    const s = settings();
+    const prev = document.getElementById('qd_icon_prev');
+    const inp = document.getElementById('qd_icon');
+    if (prev) prev.innerHTML = iconHTML(s.icon);
+    if (inp) inp.value = s.icon;
 }
 
 function renderScan() {
@@ -1003,25 +1316,25 @@ function renderSettingsLists() {
     if (!scBox || !trBox) return;
     scBox.innerHTML = s.shortcuts.length
         ? s.shortcuts.map(sc => `<div class="qd_set_row" data-id="${esc(sc.id)}">
-            <i class="${esc(sc.icon)}"></i>
-            <span class="qd_set_name"><b>${esc(sc.label)}</b> <code>${esc(sc.sel)}</code>${sc.path?.length ? ` <small>(+เปิดเมนู ${sc.path.length} ขั้น)</small>` : ''}</span>
+            <span class="qd_set_ic">${iconHTML(sc.icon)}</span>
+            <span class="qd_set_name"><b>${esc(sc.label)}</b> ${sc.builtin ? `<small>(${esc(BUILTINS[sc.builtin]?.hint ?? '')})</small>` : `<code>${esc(sc.sel)}</code>`}${sc.path?.length ? ` <small>(+เปิดเมนู ${sc.path.length} ขั้น)</small>` : ''}</span>
             <div class="menu_button qd_row_del" title="ลบ"><i class="fa-solid fa-trash"></i></div></div>`).join('')
         : '<div class="qd_set_row"><i>ยังไม่มี</i></div>';
     trBox.innerHTML = s.tray.length
         ? s.tray.map(t => `<div class="qd_set_row" data-id="${esc(t.id)}">
-            <i class="fa-solid ${live.has(t.id) ? 'fa-circle-check' : 'fa-circle-question'}" title="${live.has(t.id) ? 'อยู่ใน dock' : 'ยังไม่พบปุ่มนี้บนหน้า'}"></i>
+            <span class="qd_set_ic"><i class="fa-solid ${live.has(t.id) ? 'fa-circle-check' : 'fa-circle-question'}" title="${live.has(t.id) ? 'อยู่ใน dock' : 'ยังไม่พบปุ่มนี้บนหน้า'}"></i></span>
             <span class="qd_set_name"><b>${esc(t.label)}</b> <code>${esc(t.sel)}</code></span>
             <div class="menu_button qd_row_del" title="คืนปุ่มนี้กลับไปลอยบนจอ"><i class="fa-solid fa-arrow-up-from-bracket"></i></div></div>`).join('')
         : '<div class="qd_set_row"><i>ยังไม่มี</i></div>';
     scBox.querySelectorAll('.qd_row_del').forEach(b => b.addEventListener('click', () => {
         removeShortcut(b.closest('.qd_set_row').dataset.id);
         renderSettingsLists();
-        if (panel.classList.contains('qd_open')) renderPanel();
+        if (isOpen()) renderPanel();
     }));
     trBox.querySelectorAll('.qd_row_del').forEach(b => b.addEventListener('click', () => {
         removeTrayItem(b.closest('.qd_set_row').dataset.id);
         renderSettingsLists();
-        if (panel.classList.contains('qd_open')) renderPanel();
+        if (isOpen()) renderPanel();
     }));
 }
 
@@ -1042,6 +1355,6 @@ function init() {
     console.log(LOG, 'loaded');
 }
 
-globalThis.QuickDock = { settings, openPanel, closePanel, startPick, endPick, syncTray, releaseAll, scanFloating, buildSelector, runShortcut };
+globalThis.QuickDock = { settings, openPanel, closePanel, startPick, endPick, syncTray, releaseAll, scanFloating, buildSelector, runShortcut, computeArcSlots };
 
 if (typeof jQuery === 'function') jQuery(init); else init();
