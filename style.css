@@ -1,11 +1,9 @@
 /* Quick Dock — uses SillyTavern theme variables so it follows any theme */
 
 /* ---------------------------------------------------------------- launcher */
+/* Colours, sizes and effects come from the settings as variables on <html> (applyLook). */
 #qd_launcher {
     --qd-size: 46px;
-    --qd-fg: var(--SmartThemeBodyColor, #ddd);
-    --qd-accent: var(--SmartThemeQuoteColor, #e18a24);
-    --qd-bg: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.7));
     position: fixed;
     top: 0;
     left: 0;
@@ -16,25 +14,24 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: calc(var(--qd-size) * 0.42);
-    color: var(--qd-fg);
-    background: color-mix(in srgb, var(--qd-bg) 70%, transparent);
-    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
+    font-size: calc(var(--qd-size) * var(--qd-icon, 0.42));
+    color: var(--qd-fg, #ddd);
+    background: color-mix(in srgb, var(--qd-bg, #1e1e28) var(--qd-bg-op, 85%), transparent);
+    border: 1px solid var(--qd-border, #555);
     border-radius: 50%;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    opacity: var(--qd-idle-op, 1);
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     touch-action: none;
-    transition: left 0.18s ease-out, top 0.18s ease-out, background-color 0.15s, opacity 0.15s;
+    transition: left 0.18s ease-out, top 0.18s ease-out, opacity 0.15s;
 }
 #qd_launcher.qd_off { display: none; }
 #qd_launcher.qd_active,
-#qd_launcher:focus-visible { color: var(--qd-accent); border-color: var(--qd-accent); background: var(--qd-bg); }
+#qd_launcher:focus-visible { opacity: 1; color: var(--qd-accent, #e18a24); border-color: var(--qd-accent, #e18a24); }
 #qd_launcher.qd_dragging { transition: none; cursor: grabbing; opacity: 0.85; }
 
 /* status dot: a tray button (e.g. Chat Auto Backup) needs attention */
@@ -46,10 +43,13 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: 2px solid var(--qd-bg);
+    border: 2px solid var(--qd-bg, #1e1e28);
     display: none;
 }
-#qd_launcher[data-status="waiting"]::after { display: block; background: color-mix(in srgb, var(--qd-accent) 55%, transparent); }
+#qd_launcher[data-status="waiting"]::after { display: block; background: color-mix(in srgb, var(--qd-accent, #e18a24) 55%, transparent); }
+#qd_launcher[data-status] { opacity: 1; }
+#qd_launcher[data-status=""] { opacity: var(--qd-idle-op, 1); }
+#qd_launcher.qd_active { opacity: 1; }
 #qd_launcher[data-status="attention"]::after { display: block; background: #e5484d; animation: qd_pulse 1.4s ease-in-out infinite; }
 @keyframes qd_pulse { 50% { box-shadow: 0 0 0 4px rgba(229, 72, 77, 0.35); } }
 
@@ -71,10 +71,8 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     color: var(--SmartThemeBodyColor, #ddd);
-    background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.85));
-    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1e1e28) 92%, transparent); /* card keeps the theme's own background so its text stays readable */
+    border: 1px solid var(--qd-border, #555);
     border-radius: 12px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
     font-family: var(--mainFontFamily, inherit);
@@ -106,7 +104,7 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-#qd_panel .qd_sc .qd_btnface { font-size: 18px; height: 20px; }
+#qd_panel .qd_sc .qd_btnface { font-size: calc(var(--qd-item, 46px) * var(--qd-icon, 0.42)); height: calc(var(--qd-item, 46px) * var(--qd-icon, 0.42) + 2px); color: var(--qd-fg, #ddd); }
 #qd_panel .qd_sc span {
     max-width: 100%;
     font-size: 10.5px;
@@ -116,7 +114,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-#qd_panel .qd_sc:active { background: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 35%, transparent); }
+
 
 /* ---------------------------------------------------------------- arc: shortcuts around the launcher */
 #qd_arc { display: none; }
@@ -125,7 +123,7 @@
 #qd_arc .qd_arc_item {
     position: fixed;
     z-index: 3052;
-    width: 46px;
+    width: var(--qd-item, 46px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -137,19 +135,16 @@
 }
 #qd_arc .qd_btnface {
     flex-shrink: 0;
-    width: 46px;
-    height: 46px;
+    width: var(--qd-item, 46px);
+    height: var(--qd-item, 46px);
     box-sizing: border-box;
     border-radius: 50%;
-    font-size: 18px;
-    color: var(--SmartThemeBodyColor, #ddd);
-    background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.85));
-    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
+    font-size: calc(var(--qd-item, 46px) * var(--qd-icon, 0.42));
+    color: var(--qd-fg, #ddd);
+    background: color-mix(in srgb, var(--qd-bg, #1e1e28) var(--qd-bg-op, 85%), transparent);
+    border: 1px solid var(--qd-border, #555);
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
 }
-#qd_arc .qd_arc_item:active .qd_btnface { border-color: var(--SmartThemeQuoteColor, #e18a24); color: var(--SmartThemeQuoteColor, #e18a24); }
 #qd_arc .qd_arc_item span {
     flex-shrink: 0;
     margin-top: 1px;
@@ -161,12 +156,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--SmartThemeBodyColor, #ddd);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #111) 85%, transparent);
+    background: color-mix(in srgb, var(--qd-bg, #1e1e28) 85%, transparent);
     border-radius: 4px;
 }
 #qd_arc.qd_nolabels .qd_arc_item span { display: none; }
+#qd_arc .qd_arc_item.qd_lbl_end { align-items: flex-end; }
+#qd_arc .qd_arc_item.qd_lbl_start { align-items: flex-start; }
 #qd_arc.qd_editing .qd_btnface { border-style: dashed; }
-#qd_arc .qd_arc_item.qd_sel .qd_btnface { border: 2px solid var(--SmartThemeQuoteColor, #e18a24); }
+#qd_arc .qd_arc_item.qd_sel .qd_btnface { border: 2px solid var(--qd-accent, #e18a24); }
 
 /* ---------------------------------------------------------------- tray: other extensions' floating buttons */
 #qd_panel .qd_tray {
@@ -208,7 +205,7 @@
 #qd_panel.qd_editing .qd_slot.qd_gone { display: flex; }
 #qd_panel.qd_editing .qd_slot.qd_gone .qd_slot_ph { display: block; }
 #qd_panel .qd_sc.qd_sel,
-#qd_panel .qd_slot.qd_sel .qd_slot_cover { border: 1px solid var(--SmartThemeQuoteColor, #e18a24); outline-color: var(--SmartThemeQuoteColor, #e18a24); outline-style: solid; }
+#qd_panel .qd_slot.qd_sel .qd_slot_cover { border: 1px solid var(--qd-accent, #e18a24); outline-color: var(--qd-accent, #e18a24); outline-style: solid; }
 
 #qd_panel .qd_hint { font-size: 11px; opacity: 0.7; max-width: var(--qd-card-w); }
 #qd_panel .qd_hint:empty { display: none; }
@@ -289,7 +286,7 @@
 #qd_panel .qd_launcherbtn { display: none; }
 #qd_panel.qd_editing .qd_launcherbtn { display: flex; }
 #qd_panel .qd_editbtn { margin-left: auto; }
-#qd_panel.qd_editing .qd_editbtn { color: var(--SmartThemeQuoteColor, #e18a24); opacity: 1; }
+#qd_panel.qd_editing .qd_editbtn { color: var(--qd-accent, #e18a24); opacity: 1; }
 
 /* ---------------------------------------------------------------- pick mode */
 html.qd_picking #qd_launcher { opacity: 0.5; }
@@ -342,7 +339,7 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 @keyframes qd_flash { to { outline-color: transparent; } }
 
 /* ---------------------------------------------------------------- settings drawer */
-.qd_settings .qd_set_grid { display: grid; grid-template-columns: 1fr 140px; gap: 4px 8px; align-items: center; margin: 6px 0; }
+.qd_settings .qd_set_grid { display: grid; grid-template-columns: 1fr minmax(140px, 55%); gap: 4px 8px; align-items: center; margin: 6px 0; }
 .qd_settings .qd_set_grid input { margin: 0; }
 .qd_settings .qd_set_btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 4px; }
 .qd_settings .qd_set_btns .menu_button { width: auto; padding: 4px 10px; }
@@ -364,4 +361,65 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 @media (prefers-reduced-motion: reduce) {
     #qd_launcher { transition: none; }
     #qd_launcher[data-status="attention"]::after, .qd_flash { animation: none; }
+}
+
+/* ---------------------------------------------------------------- optional looks */
+html.qd-blur #qd_launcher,
+html.qd-blur #qd_arc .qd_btnface,
+html.qd-blur #qd_panel {
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
+    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
+}
+html.qd-noshadow #qd_launcher,
+html.qd-noshadow #qd_arc .qd_btnface { box-shadow: none; }
+
+/* ---------------------------------------------------------------- hover / press effects
+ * Cheap on purpose: colour, outline or a transform on the inner face only (never on
+ * the fixed-position element itself — see the iOS note at #qd_pickbar). Mouse hover
+ * is limited to devices that really hover, so touch screens don't keep a stuck state. */
+#qd_arc .qd_btnface,
+#qd_panel .qd_sc,
+#qd_launcher > * {
+    transition: transform 0.12s ease-out, background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+@media (hover: hover) {
+    html.qd-fx-ring #qd_arc .qd_arc_item:hover .qd_btnface,
+    html.qd-fx-ring #qd_panel .qd_sc:hover { outline: 2px solid var(--qd-accent, #e18a24); outline-offset: 2px; }
+    html.qd-fx-border #qd_arc .qd_arc_item:hover .qd_btnface,
+    html.qd-fx-border #qd_panel .qd_sc:hover,
+    html.qd-fx-border #qd_panel .qd_sc:hover .qd_btnface { border-color: var(--qd-accent, #e18a24); color: var(--qd-accent, #e18a24); }
+    html.qd-fx-tint #qd_arc .qd_arc_item:hover .qd_btnface,
+    html.qd-fx-tint #qd_panel .qd_sc:hover { background: color-mix(in srgb, var(--qd-accent, #e18a24) 30%, var(--qd-bg, #1e1e28)); }
+    html.qd-fx-grow #qd_arc .qd_arc_item:hover .qd_btnface,
+    html.qd-fx-grow #qd_panel .qd_sc:hover .qd_btnface,
+    html.qd-fx-grow #qd_launcher:hover > * { transform: scale(1.12); }
+    html.qd-fx-lift #qd_arc .qd_arc_item:hover .qd_btnface,
+    html.qd-fx-lift #qd_panel .qd_sc:hover .qd_btnface { transform: translateY(-3px); }
+}
+html.qd-fx-ring #qd_arc .qd_arc_item:active .qd_btnface,
+html.qd-fx-ring #qd_panel .qd_sc:active { outline: 2px solid var(--qd-accent, #e18a24); outline-offset: 2px; }
+html.qd-fx-border #qd_arc .qd_arc_item:active .qd_btnface,
+html.qd-fx-border #qd_panel .qd_sc:active,
+html.qd-fx-border #qd_panel .qd_sc:active .qd_btnface { border-color: var(--qd-accent, #e18a24); color: var(--qd-accent, #e18a24); }
+html.qd-fx-tint #qd_arc .qd_arc_item:active .qd_btnface,
+html.qd-fx-tint #qd_panel .qd_sc:active { background: color-mix(in srgb, var(--qd-accent, #e18a24) 30%, var(--qd-bg, #1e1e28)); }
+html.qd-fx-grow #qd_arc .qd_arc_item:active .qd_btnface,
+html.qd-fx-grow #qd_panel .qd_sc:active .qd_btnface,
+html.qd-fx-grow #qd_launcher:active > * { transform: scale(1.12); }
+html.qd-fx-press #qd_arc .qd_arc_item:active .qd_btnface,
+html.qd-fx-press #qd_panel .qd_sc:active .qd_btnface,
+html.qd-fx-press #qd_launcher:active > * { transform: scale(0.88); }
+html.qd-fx-lift #qd_arc .qd_arc_item:active .qd_btnface,
+html.qd-fx-lift #qd_panel .qd_sc:active .qd_btnface { transform: translateY(-3px); }
+
+/* settings: colour source + custom picker, preview button */
+.qd_settings .qd_colorpick { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.qd_settings .qd_colorpick select { flex: 1; min-width: 0; margin: 0; }
+.qd_settings .qd_colorpick input[type="color"] { width: 34px; height: 28px; padding: 0; border: none; background: none; flex-shrink: 0; }
+.qd_settings .qd_colorpick input[hidden] { display: none; }
+.qd_settings .qd_set_title { display: flex; align-items: center; gap: 8px; }
+.qd_settings .qd_inline_btn { width: auto; margin: 0; padding: 2px 8px; font-weight: 400; font-size: 0.9em; }
+.qd_settings .qd_set_grid input[type="range"] { width: 100%; }
+@media (prefers-reduced-motion: reduce) {
+    #qd_arc .qd_btnface, #qd_panel .qd_sc, #qd_launcher > * { transition: none; }
 }

@@ -18,18 +18,29 @@ const LONG_PRESS_MS = 550;
 const MOVE_TOLERANCE = 10;   // px a finger may wobble during a long press
 const MAX_PATH = 3;          // menu-opening taps remembered per shortcut
 
-// Arc geometry (px)
-const ARC_ITEM = 46;         // button diameter
-const ARC_LABEL = 14;        // label height under the button
-const ARC_SPAN = 60;         // distance between neighbouring button centres
-const ARC_RING_GAP = 64;     // distance between rings
-const ARC_MAX_RINGS = 3;     // beyond ~190px the thumb stops reaching; the rest go into the card
+// Arc geometry
+const ARC_LABEL = 14;        // px, label height under a button
+const ARC_LABEL_W = 64;      // px, widest a label may get
+const ARC_REACH = 210;       // px from the launcher's centre; beyond this the thumb stops reaching — the rest go into the card
+const ARC_MAX_RINGS = 4;
 
 const DEFAULTS = Object.freeze({
     enabled: true,
     layout: 'arc',                   // 'arc' | 'grid'
-    showLabels: true,
+    labelMode: 'show',               // 'show' | 'hide' | 'edit' (only while editing)
     size: 46,                        // launcher diameter
+    itemSize: 46,                    // shortcut button diameter
+    iconScale: 42,                   // icon size, % of its button
+    iconColor: 'body',               // see COLOR_SOURCES
+    bgColor: 'tint',
+    borderColor: 'border',
+    accentColor: 'quote',
+    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24' }),
+    bgOpacity: 85,                   // % — button backgrounds
+    idleOpacity: 100,                // % — launcher while the dock is closed
+    blur: false,                     // backdrop blur (costs GPU)
+    shadow: true,
+    fx: 'ring',                      // hover/press effect, see FX
     icon: 'fa-solid fa-bolt',
     columns: 4,
     closeOnShortcut: true,
@@ -40,6 +51,29 @@ const DEFAULTS = Object.freeze({
     pos: Object.freeze({ x: 1, y: 0.8, edge: 'right' }),
     shortcuts: Object.freeze([]),    // { id, label, icon, sel, path } | { id, label, icon, builtin }
     tray: Object.freeze([]),         // { id, label, sel }
+});
+
+const COLOR_SOURCES = Object.freeze({
+    body: ['ตัวอักษรหลัก (Main Text)', '--SmartThemeBodyColor'],
+    em: ['ตัวเอียง (Italics)', '--SmartThemeEmColor'],
+    underline: ['ขีดเส้นใต้ (Underline)', '--SmartThemeUnderlineColor'],
+    quote: ['คำพูด (Quote)', '--SmartThemeQuoteColor'],
+    tint: ['พื้นเบลอ (UI Background)', '--SmartThemeBlurTintColor'],
+    chat: ['พื้นแชท (Chat Background)', '--SmartThemeChatTintColor'],
+    border: ['ขอบ (UI Border)', '--SmartThemeBorderColor'],
+    shadow: ['เงา (Shadow)', '--SmartThemeShadowColor'],
+    custom: ['กำหนดเอง…', null],
+});
+
+// Hover (mouse) / press (touch) effects — only colour, outline or transform changes: no blur, no animated shadows.
+const FX = Object.freeze({
+    none: 'ไม่มี',
+    ring: 'วงแหวนรอบปุ่ม',
+    border: 'ขอบและไอคอนเปลี่ยนสี',
+    tint: 'พื้นปุ่มอมสีเน้น',
+    grow: 'ขยายขึ้นเล็กน้อย',
+    press: 'ยุบลงตอนกด',
+    lift: 'ลอยขึ้นเล็กน้อย',
 });
 
 const BUILTINS = Object.freeze({
@@ -71,11 +105,14 @@ function settings() {
     const ext = ctx().extensionSettings;
     if (!ext[MODULE]) ext[MODULE] = {};
     const s = ext[MODULE];
+    if (s.labelMode === undefined && s.showLabels === false) s.labelMode = 'hide'; // 1.1 setting
+    delete s.showLabels;
     for (const [k, v] of Object.entries(DEFAULTS)) {
         if (s[k] === undefined) s[k] = Array.isArray(v) ? [] : (v && typeof v === 'object') ? { ...v } : v;
     }
     if (!Array.isArray(s.shortcuts)) s.shortcuts = [];
     if (!Array.isArray(s.tray)) s.tray = [];
+    s.customColors = { ...DEFAULTS.customColors, ...(s.customColors || {}) };
     if (!s.builtinsSeeded) {
         s.builtinsSeeded = true;
         const add = Object.keys(BUILTINS).filter(b => !s.shortcuts.some(x => x.builtin === b));
@@ -364,6 +401,7 @@ function buildUI() {
     document.addEventListener('pointerdown', e => {
         if (!isOpen()) return;
         if (panel.contains(e.target) || launcher.contains(e.target) || arc.contains(e.target)) return;
+        if (e.target.closest?.('#qd_settings')) return; // live preview while adjusting the look
         closePanel();
     }, true);
     document.addEventListener('keydown', e => {
@@ -382,14 +420,38 @@ function buildUI() {
     window.visualViewport?.addEventListener('scroll', () => { if (isOpen() && isTyping()) placePanel(); });
 }
 
+function colorValue(key, which) {
+    const s = settings();
+    if (key === 'custom') return s.customColors[which] || DEFAULTS.customColors[which];
+    const v = COLOR_SOURCES[key]?.[1];
+    return v ? `var(${v})` : null;
+}
+
+const itemSize = () => clamp(Number(settings().itemSize) || DEFAULTS.itemSize, 30, 80);
+const labelsVisible = () => { const m = settings().labelMode; return m === 'show' || (m === 'edit' && editing); };
+
 function applyLook() {
     const s = settings();
+    const root = document.documentElement;
+    const set = (k, v) => root.style.setProperty(k, v);
+    set('--qd-fg', colorValue(s.iconColor, 'icon') ?? 'var(--SmartThemeBodyColor)');
+    set('--qd-bg', colorValue(s.bgColor, 'bg') ?? 'var(--SmartThemeBlurTintColor)');
+    set('--qd-border', colorValue(s.borderColor, 'border') ?? 'var(--SmartThemeBorderColor)');
+    set('--qd-accent', colorValue(s.accentColor, 'accent') ?? 'var(--SmartThemeQuoteColor)');
+    set('--qd-bg-op', `${clamp(Number.isFinite(Number(s.bgOpacity)) ? Number(s.bgOpacity) : 85, 0, 100)}%`);
+    set('--qd-idle-op', String(clamp(Number(s.idleOpacity) || 100, 15, 100) / 100));
+    set('--qd-item', `${itemSize()}px`);
+    set('--qd-icon', String(clamp(Number(s.iconScale) || DEFAULTS.iconScale, 25, 75) / 100));
+    for (const k of Object.keys(FX)) root.classList.toggle(`qd-fx-${k}`, s.fx === k);
+    root.classList.toggle('qd-blur', !!s.blur);
+    root.classList.toggle('qd-noshadow', !s.shadow);
+
     launcher.style.setProperty('--qd-size', `${clamp(Number(s.size) || DEFAULTS.size, 28, 90)}px`);
     launcher.innerHTML = iconHTML(s.icon || DEFAULTS.icon);
     panel.querySelector('.qd_launcherprev').innerHTML = iconHTML(s.icon || DEFAULTS.icon);
     panel.style.setProperty('--qd-cols', clamp(Number(s.columns) || DEFAULTS.columns, 2, 8));
     launcher.classList.toggle('qd_off', !s.enabled);
-    arc.classList.toggle('qd_nolabels', !s.showLabels);
+    arc.classList.toggle('qd_nolabels', !labelsVisible());
     placeLauncher();
     updateBadge();
 }
@@ -487,6 +549,7 @@ function togglePanel() {
 
 function openPanel() {
     if (!settings().enabled) return;
+    applyLook();
     panel.classList.add('qd_open');
     arc.classList.add('qd_open');
     launcher.classList.add('qd_active');
@@ -535,6 +598,7 @@ function renderPanel() {
         : (!s.shortcuts.length && !s.tray.length ? 'ยังว่างอยู่ — กด “ช็อตคัท” หรือ “ปุ่มลอย” ด้านล่าง' : '');
     panel.classList.toggle('qd_editing', editing);
     arc.classList.toggle('qd_editing', editing);
+    arc.classList.toggle('qd_nolabels', !labelsVisible());
     placePanel();
 }
 
@@ -556,7 +620,7 @@ function onShortcutTap(id) {
 
 // ---------------------------------------------------------------- placement
 
-const isTyping = () => !!panel && panel.contains(document.activeElement) && document.activeElement.matches('input, textarea');
+const isTyping = () => !!panel && panel.contains(document.activeElement) && document.activeElement.matches('input:not([type="color"]), textarea');
 
 /**
  * Button centres on rings around the launcher, filling the side that faces
@@ -569,14 +633,20 @@ function computeArcSlots(n) {
     const l = launcher.getBoundingClientRect();
     const cx = l.left + l.width / 2, cy = l.top + l.height / 2;
     const onRight = cx > vw / 2;
-    const label = settings().showLabels ? ARC_LABEL : 0;
-    const half = ARC_ITEM / 2;
+    const item = itemSize();
+    const label = labelsVisible() ? ARC_LABEL : 0;
+    const half = item / 2;
+    // Room for the label under each button, so neither neighbours nor the next ring land on it.
+    // (Near a screen edge the label lines up with the button's inner side instead — see placeArc.)
+    const span = label ? Math.max(item + label + 10, ARC_LABEL_W + 6) : item + 12;
+    const gap = item + (label ? label + 12 : 14);
     const fits = (x, y) => x - half >= EDGE_MARGIN && x + half <= vw - EDGE_MARGIN
         && y - half >= EDGE_MARGIN && y + half + label <= vh - EDGE_MARGIN;
     const out = [];
     for (let ring = 0; out.length < n && ring < ARC_MAX_RINGS; ring++) {
-        const R = l.width / 2 + half + 16 + ring * ARC_RING_GAP;
-        const step = ARC_SPAN / R;
+        const R = l.width / 2 + half + 14 + ring * gap;
+        if (ring > 0 && R > ARC_REACH) break;
+        const step = span / R;
         // Sweep from pointing up, through pointing inward, to pointing down — reads top-to-bottom like the list.
         const candidates = [];
         for (let a = 0; a <= Math.PI + 1e-6; a += step) {
@@ -597,9 +667,19 @@ function placeArc() {
     items.forEach((item, i) => {
         const p = arcSlots[i];
         if (!p) return;
-        item.style.left = `${Math.round(p.x - ARC_ITEM / 2)}px`;
-        item.style.top = `${Math.round(p.y - ARC_ITEM / 2)}px`;
-        const r = { l: p.x - 30, t: p.y - ARC_ITEM / 2, r: p.x + 30, b: p.y + ARC_ITEM / 2 + ARC_LABEL };
+        const size = itemSize(), label = labelsVisible() ? ARC_LABEL : 0;
+        item.style.left = `${Math.round(p.x - size / 2)}px`;
+        item.style.top = `${Math.round(p.y - size / 2)}px`;
+        const halfW = Math.max(size / 2, label ? ARC_LABEL_W / 2 : 0);
+        const { vw } = viewportSize();
+        const nearRight = label && p.x + halfW > vw - 2, nearLeft = label && p.x - halfW < 2;
+        item.classList.toggle('qd_lbl_end', nearRight);
+        item.classList.toggle('qd_lbl_start', nearLeft && !nearRight);
+        const extra = halfW - size / 2;
+        const r = {
+            l: p.x - size / 2 - (nearLeft ? 0 : extra), t: p.y - size / 2,
+            r: p.x + size / 2 + (nearRight ? 0 : extra), b: p.y + size / 2 + label,
+        };
         box = box ? { l: Math.min(box.l, r.l), t: Math.min(box.t, r.t), r: Math.max(box.r, r.r), b: Math.max(box.b, r.b) } : r;
     });
     return box;
@@ -1169,6 +1249,14 @@ function commitPick() {
 
 // ---------------------------------------------------------------- settings panel
 
+function colorRow(id, label, key, which) {
+    return `<label for="${id}">${label}</label>
+        <div class="qd_colorpick">
+            <select id="${id}" class="text_pole">${Object.entries(COLOR_SOURCES).map(([k, [name]]) => `<option value="${k}">${esc(name)}</option>`).join('')}</select>
+            <input type="color" id="${id}_pick" aria-label="${label} (กำหนดเอง)">
+        </div>`;
+}
+
 function renderSettings() {
     const s = settings();
     const html = `
@@ -1197,10 +1285,35 @@ function renderSettings() {
                     <input type="text" id="qd_icon" class="text_pole" placeholder="อีโมจิ หรือ fa-solid fa-bolt">
                 </div>
                 <div id="qd_icon_grid" class="qd_icongrid">${iconGridHTML()}</div>
-                <label class="checkbox_label"><input type="checkbox" id="qd_labels"> แสดงชื่อใต้ไอคอนช็อตคัท</label>
                 <label class="checkbox_label"><input type="checkbox" id="qd_close_sc"> ปิดแผงหลังกดช็อตคัท</label>
                 <label class="checkbox_label"><input type="checkbox" id="qd_close_tray"> ปิดแผงหลังกดปุ่มลอยใน dock</label>
                 <label class="checkbox_label" title="เช่น Chat Auto Backup ขึ้น Attention! ปุ่มหลักจะมีจุดแดงกระพริบ แม้ปิดแผงอยู่"><input type="checkbox" id="qd_dot"> จุดแจ้งสถานะบนปุ่มหลัก</label>
+                <div class="qd_set_title">หน้าตา <div id="qd_preview" class="menu_button qd_inline_btn" title="เปิด dock ค้างไว้ระหว่างปรับ"><i class="fa-solid fa-eye"></i> ดูตัวอย่าง</div></div>
+                <div class="qd_set_grid">
+                    <label for="qd_labelmode">ชื่อใต้ปุ่มช็อตคัท</label>
+                    <select id="qd_labelmode" class="text_pole">
+                        <option value="show">แสดง</option>
+                        <option value="hide">ไม่แสดง</option>
+                        <option value="edit">แสดงเฉพาะตอนแก้ไข</option>
+                    </select>
+                    <label for="qd_itemsize">ขนาดปุ่มช็อตคัท (px)</label>
+                    <input type="number" id="qd_itemsize" class="text_pole" min="30" max="80" step="1">
+                    <label for="qd_iconscale">ขนาดไอคอน (% ของปุ่ม)</label>
+                    <input type="number" id="qd_iconscale" class="text_pole" min="25" max="75" step="1">
+                    ${colorRow('qd_c_icon', 'สีไอคอน', 'iconColor', 'icon')}
+                    ${colorRow('qd_c_bg', 'สีพื้นปุ่ม', 'bgColor', 'bg')}
+                    ${colorRow('qd_c_border', 'สีขอบ', 'borderColor', 'border')}
+                    ${colorRow('qd_c_accent', 'สีเน้น (ตอนกด/เลือก)', 'accentColor', 'accent')}
+                    <label for="qd_bgop">ความทึบพื้นปุ่ม <output id="qd_bgop_out"></output></label>
+                    <input type="range" id="qd_bgop" min="0" max="100" step="5">
+                    <label for="qd_idleop">ความทึบปุ่มหลักตอนปิด <output id="qd_idleop_out"></output></label>
+                    <input type="range" id="qd_idleop" min="15" max="100" step="5">
+                    <label for="qd_fx">เอฟเฟกต์ตอนชี้/กด</label>
+                    <select id="qd_fx" class="text_pole">${Object.entries(FX).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
+                </div>
+                <label class="checkbox_label"><input type="checkbox" id="qd_shadow"> เงาใต้ปุ่ม</label>
+                <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_blur"> เบลอพื้นหลังใต้ปุ่ม (กิน GPU)</label>
+                <div class="qd_set_btns"><div id="qd_look_reset" class="menu_button"><i class="fa-solid fa-rotate-left"></i> คืนค่าหน้าตาเริ่มต้น</div></div>
                 <div class="qd_set_btns">
                     <div id="qd_add_sc" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มช็อตคัท</div>
                     <div id="qd_add_tray" class="menu_button"><i class="fa-solid fa-inbox"></i> เก็บปุ่มลอย</div>
@@ -1237,7 +1350,48 @@ function renderSettings() {
         });
     };
     bindCheck('qd_enabled', 'enabled', () => { applyLook(); if (s.enabled) syncTray(); else { closePanel(); releaseAll(); } });
-    bindCheck('qd_labels', 'showLabels', () => { applyLook(); if (isOpen()) renderPanel(); });
+    const restyle = () => { applyLook(); if (isOpen()) renderPanel(); };
+    bindCheck('qd_shadow', 'shadow', restyle);
+    bindCheck('qd_blur', 'blur', restyle);
+    const bindSelect = (id, key) => {
+        $(id).value = s[key];
+        $(id).addEventListener('change', e => { s[key] = e.target.value; save(); restyle(); });
+    };
+    bindSelect('qd_labelmode', 'labelMode');
+    bindSelect('qd_fx', 'fx');
+    bindNum('qd_itemsize', 'itemSize', 30, 80);
+    bindNum('qd_iconscale', 'iconScale', 25, 75);
+    const bindRange = (id, key) => {
+        const out = $(`${id}_out`);
+        const show = () => { $(id).value = s[key]; out.textContent = `${s[key]}%`; };
+        show();
+        $(id).addEventListener('input', e => { s[key] = Number(e.target.value); out.textContent = `${s[key]}%`; save(); applyLook(); });
+        return show;
+    };
+    const showBg = bindRange('qd_bgop', 'bgOpacity');
+    const showIdle = bindRange('qd_idleop', 'idleOpacity');
+    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent']];
+    const showColors = () => colorInputs.forEach(([id, key, which]) => {
+        $(id).value = s[key];
+        $(`${id}_pick`).value = s.customColors[which];
+        $(`${id}_pick`).hidden = s[key] !== 'custom';
+    });
+    for (const [id, key, which] of colorInputs) {
+        $(id).addEventListener('change', e => { s[key] = e.target.value; save(); showColors(); applyLook(); });
+        $(`${id}_pick`).addEventListener('input', e => { s.customColors[which] = e.target.value; save(); applyLook(); });
+    }
+    showColors();
+    $('qd_preview').addEventListener('click', () => openPanel());
+    $('qd_look_reset').addEventListener('click', () => {
+        for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx']) s[k] = DEFAULTS[k];
+        s.customColors = { ...DEFAULTS.customColors };
+        save();
+        for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale']]) $(id).value = s[key];
+        $('qd_shadow').checked = s.shadow;
+        $('qd_blur').checked = s.blur;
+        showBg(); showIdle(); showColors();
+        restyle();
+    });
     bindCheck('qd_close_sc', 'closeOnShortcut');
     bindCheck('qd_close_tray', 'closeOnTray');
     bindCheck('qd_dot', 'statusDot', updateBadge);
@@ -1349,6 +1503,7 @@ function init() {
     renderPanel();
     syncTray();
     domObserver.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS Safari apply :active (press effects)
     const { eventSource, event_types: E } = ctx();
     if (E?.APP_READY) eventSource.on(E.APP_READY, () => { syncTray(); renderSettingsLists(); });
     if (E?.CHAT_CHANGED) eventSource.on(E.CHAT_CHANGED, () => syncTray());
