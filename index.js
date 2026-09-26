@@ -50,7 +50,7 @@ const DEFAULTS = Object.freeze({
     builtinsSeeded: false,
     pos: Object.freeze({ x: 1, y: 0.8, edge: 'right' }),
     shortcuts: Object.freeze([]),    // { id, label, icon, sel, path } | { id, label, icon, builtin }
-    tray: Object.freeze([]),         // { id, label, sel }
+    tray: Object.freeze([]),         // { id, label, sel, proxy?, icon? } — proxy: the button stays where it is (hidden) and a stand-in icon in the card taps it
 });
 
 const COLOR_SOURCES = Object.freeze({
@@ -348,6 +348,7 @@ function buildUI() {
                 <div class="menu_button qd_ed_left" title="เลื่อนไปก่อน"><i class="fa-solid fa-arrow-left"></i></div>
                 <div class="menu_button qd_ed_right" title="เลื่อนไปหลัง"><i class="fa-solid fa-arrow-right"></i></div>
                 <div class="menu_button qd_ed_rebind" title="ผูกกับปุ่มอื่น"><i class="fa-solid fa-crosshairs"></i></div>
+                <div class="menu_button qd_ed_proxy"></div>
                 <div class="menu_button qd_ed_del"></div>
                 <div class="menu_button qd_ed_done" title="เสร็จ"><i class="fa-solid fa-check"></i></div>
             </div>
@@ -367,6 +368,8 @@ function buildUI() {
         const slot = e.target.closest('.qd_slot');
         if (!slot) return;
         if (editing) { openEditor('tray', slot.dataset.id); return; }
+        // Next tick: the real tap must finish bubbling first, or the button's "tapped outside" handling would close what it just opened.
+        if (e.target.closest('.qd_proxy')) { const el = live.get(slot.dataset.id)?.el; setTimeout(() => forwardTap(el), 0); }
         if (settings().closeOnTray) setTimeout(closePanel, 0); // after the button's own handler
     });
     panel.querySelector('.qd_bar').addEventListener('click', e => {
@@ -399,7 +402,7 @@ function buildUI() {
 
     // Close when tapping elsewhere.
     document.addEventListener('pointerdown', e => {
-        if (!isOpen()) return;
+        if (!isOpen() || forwarding) return;
         if (panel.contains(e.target) || launcher.contains(e.target) || arc.contains(e.target)) return;
         if (e.target.closest?.('#qd_settings')) return; // live preview while adjusting the look
         closePanel();
@@ -600,6 +603,7 @@ function renderPanel() {
     arc.classList.toggle('qd_editing', editing);
     arc.classList.toggle('qd_nolabels', !labelsVisible());
     placePanel();
+    requestAnimationFrame(checkBlankTray);
 }
 
 function setEditing(on) {
@@ -760,6 +764,12 @@ function openEditor(kind, id) {
     ed.classList.add('qd_show');
     ed.dataset.kind = kind;
     ed.classList.toggle('qd_builtin', !!item.builtin);
+    ed.classList.toggle('qd_proxyed', kind === 'tray' && !!item.proxy);
+    const px = ed.querySelector('.qd_ed_proxy');
+    px.innerHTML = item.proxy ? '<i class="fa-solid fa-hand-pointer"></i> ใช้ปุ่มจริง' : '<i class="fa-solid fa-icons"></i> ใช้ไอคอนแทน';
+    px.title = item.proxy
+        ? 'ย้ายตัวปุ่มจริงเข้ามาใน dock'
+        : 'ปุ่มว่างหรือกดไม่ได้ใน dock? — ปล่อยปุ่มจริงไว้ที่เดิม (ซ่อนไว้) แล้วแสดงไอคอนที่กดแทนปุ่มนั้นได้';
     ed.querySelector('.qd_ed_title').textContent = kind === 'launcher' ? 'ไอคอนปุ่มหลัก' : kind === 'tray' ? 'ปุ่มลอยใน dock' : item.builtin ? `ช็อตคัท: ${BUILTINS[item.builtin]?.hint ?? ''}` : 'ช็อตคัท';
     ed.querySelector('.qd_ed_label').value = kind === 'launcher' ? '' : item.label ?? '';
     ed.querySelector('.qd_ed_icon').value = item.icon ?? '';
@@ -772,7 +782,7 @@ function openEditor(kind, id) {
 
 function setIcon(value) {
     const item = currentEditItem();
-    if (!item || edit.kind === 'tray') return;
+    if (!item || (edit.kind === 'tray' && !item.proxy)) return;
     item.icon = cleanIcon(value) || (edit.kind === 'launcher' ? DEFAULTS.icon : 'fa-solid fa-circle-dot');
     save();
     const ed = panel.querySelector('.qd_editor');
@@ -781,7 +791,7 @@ function setIcon(value) {
         applyLook();
         syncSettingsIcon();
     } else {
-        document.querySelectorAll(`#qd_arc [data-id="${CSS.escape(item.id)}"] .qd_btnface, #qd_panel .qd_sc[data-id="${CSS.escape(item.id)}"] .qd_btnface`)
+        document.querySelectorAll(`#qd_arc [data-id="${CSS.escape(item.id)}"] .qd_btnface, #qd_panel .qd_sc[data-id="${CSS.escape(item.id)}"] .qd_btnface, #qd_panel .qd_slot[data-id="${CSS.escape(item.id)}"] .qd_proxy .qd_btnface`)
             .forEach(n => { n.innerHTML = iconHTML(item.icon); });
         renderSettingsLists();
     }
@@ -794,7 +804,7 @@ function wireEditor() {
         if (!item || edit.kind === 'launcher') return;
         item.label = e.target.value.trim() || item.label;
         save();
-        document.querySelectorAll(`#qd_arc [data-id="${CSS.escape(item.id)}"] span, #qd_panel .qd_sc[data-id="${CSS.escape(item.id)}"] span, #qd_panel .qd_slot[data-id="${CSS.escape(item.id)}"] .qd_slot_ph`)
+        document.querySelectorAll(`#qd_arc [data-id="${CSS.escape(item.id)}"] span, #qd_panel .qd_sc[data-id="${CSS.escape(item.id)}"] span, #qd_panel .qd_slot[data-id="${CSS.escape(item.id)}"] .qd_slot_ph, #qd_panel .qd_slot[data-id="${CSS.escape(item.id)}"] .qd_proxy span`)
             .forEach(n => { n.textContent = item.label; });
     });
     ed.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); }));
@@ -819,6 +829,12 @@ function wireEditor() {
     ed.querySelector('.qd_ed_left').addEventListener('click', () => move(-1));
     ed.querySelector('.qd_ed_right').addEventListener('click', () => move(1));
     ed.querySelector('.qd_ed_rebind').addEventListener('click', () => { if (edit?.kind === 'sc') startPick('sc', edit.id); });
+    ed.querySelector('.qd_ed_proxy').addEventListener('click', () => {
+        const item = currentEditItem();
+        if (edit?.kind !== 'tray' || !item) return;
+        setTrayProxy(item, !item.proxy);
+        openEditor('tray', item.id);
+    });
     ed.querySelector('.qd_ed_del').addEventListener('click', () => {
         if (!edit || edit.kind === 'launcher') return;
         if (edit.kind === 'sc') removeShortcut(edit.id); else removeTrayItem(edit.id);
@@ -920,10 +936,17 @@ function slotFor(item) {
         slot = document.createElement('div');
         slot.className = 'qd_slot';
         slot.dataset.id = item.id;
-        slot.innerHTML = '<span class="qd_slot_ph"></span><div class="qd_slot_cover"></div>';
+        slot.innerHTML = '<span class="qd_slot_ph"></span><div class="qd_sc qd_proxy" role="button" tabindex="0"><div class="qd_btnface"></div><span></span></div><div class="qd_slot_cover"></div>';
         slots.set(item.id, slot);
     }
     slot.querySelector('.qd_slot_ph').textContent = item.label;
+    slot.classList.toggle('qd_proxymode', !!item.proxy);
+    if (item.proxy) {
+        const face = slot.querySelector('.qd_proxy');
+        face.title = item.label;
+        face.querySelector('.qd_btnface').innerHTML = iconHTML(item.icon || 'fa-solid fa-circle-dot');
+        face.querySelector('span').textContent = item.label;
+    }
     return slot;
 }
 
@@ -952,7 +975,20 @@ function adopt(item, el) {
     }
     el.dataset.qdTray = item.id;
     const slot = slotFor(item);
-    slot.insertBefore(el, slot.querySelector('.qd_slot_cover'));
+    if (item.proxy) {
+        el.dataset.qdProxy = '1';
+        if (slot.contains(el)) putBack(rec);
+    } else {
+        delete el.dataset.qdProxy;
+        slot.insertBefore(el, slot.querySelector('.qd_slot_cover'));
+    }
+}
+
+/** Return a docked button to where its extension put it. */
+function putBack({ el, home }) {
+    const parent = home.parent?.isConnected && !isOwn(home.parent) ? home.parent : document.body;
+    const next = home.next?.parentNode === parent ? home.next : null;
+    parent.insertBefore(el, next);
 }
 
 function release(id) {
@@ -960,13 +996,10 @@ function release(id) {
     if (!rec) return;
     rec.obs?.disconnect();
     live.delete(id);
-    const { el, home } = rec;
+    const { el } = rec;
     delete el.dataset.qdTray;
-    if (el.isConnected && slots.get(id)?.contains(el)) {
-        const parent = home.parent?.isConnected && !isOwn(home.parent) ? home.parent : document.body;
-        const next = home.next?.parentNode === parent ? home.next : null;
-        parent.insertBefore(el, next);
-    }
+    delete el.dataset.qdProxy;
+    if (el.isConnected && slots.get(id)?.contains(el)) putBack(rec);
     setTimeout(() => window.dispatchEvent(new Event('resize')), 0); // let its extension re-position it
 }
 
@@ -985,6 +1018,103 @@ function removeTrayItem(id) {
     updateBadge();
 }
 
+/** Switch a tray item between "the real button sits in the card" and "a stand-in icon taps the hidden button". */
+function setTrayProxy(item, on) {
+    const el = live.get(item.id)?.el;
+    item.proxy = !!on;
+    if (on && !item.icon) item.icon = el ? iconOf(el) : 'fa-solid fa-circle-dot';
+    save();
+    release(item.id);
+    syncTray();
+    renderSettingsLists();
+    if (isOpen()) renderPanel();
+}
+
+/**
+ * Some floating buttons only draw themselves where their own script positions
+ * them (an absolutely placed child, a transform, a canvas sized to the screen…).
+ * Moved into the card they leave an empty box that does nothing. Once, per
+ * button, check whether anything of it is visible inside its slot; if not,
+ * switch it to a stand-in icon.
+ */
+function checkBlankTray() {
+    if (!isOpen() || editing) return;
+    const panelBox = panel.getBoundingClientRect();
+    for (const item of settings().tray) {
+        if (item.proxy !== undefined) continue;
+        const el = live.get(item.id)?.el;
+        const slot = slots.get(item.id);
+        if (!el || !slot?.contains(el) || slot.classList.contains('qd_gone')) continue;
+        const r = slot.getBoundingClientRect();
+        const box = { left: Math.max(r.left, panelBox.left), right: Math.min(r.right, panelBox.right), top: Math.max(r.top, panelBox.top), bottom: Math.min(r.bottom, panelBox.bottom) };
+        if (box.right <= box.left || box.bottom <= box.top) continue; // scrolled out of view — try again next time
+        if (paintsIn(el, box)) { item.proxy = false; save(); continue; }
+        setTrayProxy(item, true);
+        toast.info(`“${esc(item.label)}” แสดงใน dock ไม่ได้ เลยใช้ไอคอนแทนปุ่มนั้น (เปลี่ยนได้ที่ ✏️ → แตะปุ่ม)`);
+    }
+}
+
+/** Does any visible part of `el` (text, an icon, an image, a filled or bordered box) land inside `box`? */
+function paintsIn(el, box) {
+    const nodes = [el, ...el.querySelectorAll('*')].slice(0, 400);
+    const faded = n => {
+        for (let p = n; p && p !== el.parentElement; p = p.parentElement) if (Number(getComputedStyle(p).opacity) < 0.05) return true;
+        return false;
+    };
+    const pseudo = (n, which) => {
+        const c = getComputedStyle(n, which).content;
+        return c && c !== 'none' && c !== 'normal';
+    };
+    for (const n of nodes) {
+        if (!n.getClientRects().length) continue;
+        const cs = getComputedStyle(n);
+        if (cs.visibility !== 'visible' || cs.display === 'none') continue;
+        const r = n.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1 || r.right <= box.left || r.left >= box.right || r.bottom <= box.top || r.top >= box.bottom) continue;
+        const paints = /^(img|svg|canvas|video|picture|input|button)$/i.test(n.tagName)
+            || cs.backgroundImage !== 'none'
+            || !/^(transparent|rgba\(.*,\s*0\))$/.test(cs.backgroundColor)
+            || (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none' && !/,\s*0\)$/.test(cs.borderTopColor))
+            || [...n.childNodes].some(t => t.nodeType === Node.TEXT_NODE && t.textContent.trim())
+            || pseudo(n, '::before') || pseudo(n, '::after');
+        if (paints && !faded(n)) return true;
+    }
+    return false;
+}
+
+let forwarding = false;
+
+/** Tap a hidden (stand-in) tray button the way a finger would: pointer, touch, then mouse events and click. */
+function forwardTap(el) {
+    if (!el?.isConnected) { toast.warn('ยังไม่พบปุ่มนี้บนหน้า'); return; }
+    const all = [el, ...el.querySelectorAll('*')].filter(n => n.getClientRects().length);
+    const target = all.find(n => n.matches(CLICKABLE) || getComputedStyle(n).cursor === 'pointer') ?? all.at(-1) ?? el;
+    const r = target.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
+    const pointer = (type, buttons) => target.dispatchEvent(new PointerEvent(type, { ...at, buttons, pointerId: 1, pointerType: 'touch', isPrimary: true }));
+    const touch = type => {
+        try {
+            const t = new Touch({ identifier: 1, target, clientX: at.clientX, clientY: at.clientY, pageX: at.clientX + scrollX, pageY: at.clientY + scrollY });
+            const list = type === 'touchend' ? [] : [t];
+            return target.dispatchEvent(new TouchEvent(type, { ...at, touches: list, targetTouches: list, changedTouches: [t] }));
+        } catch { return true; } // no Touch constructor here — pointer and mouse events carry the tap
+    };
+    forwarding = true;
+    try {
+        const downOk = pointer('pointerdown', 1);
+        touch('touchstart');
+        pointer('pointerup', 0);
+        if (!touch('touchend')) return; // the button handled the touch and cancelled the mouse events, as a browser would
+        if (downOk) {
+            target.dispatchEvent(new MouseEvent('mousedown', { ...at, buttons: 1 }));
+            target.dispatchEvent(new MouseEvent('mouseup', { ...at, buttons: 0 }));
+        }
+        target.dispatchEvent(new MouseEvent('click', { ...at, detail: 1 }));
+    } finally {
+        forwarding = false;
+    }
+}
+
 /** Keep every tray button in its slot — also after its extension re-creates or re-appends it. */
 function syncTray() {
     const s = settings();
@@ -993,7 +1123,7 @@ function syncTray() {
         const rec = live.get(item.id);
         const slot = slotFor(item);
         if (!slot.isConnected) panel.querySelector('.qd_tray').appendChild(slot); // never park a button off-DOM
-        if (rec?.el.isConnected && slot.contains(rec.el)) continue;
+        if (rec?.el.isConnected && (item.proxy ? rec.el.dataset.qdProxy && !slot.contains(rec.el) : slot.contains(rec.el))) continue;
         if (rec && !rec.el.isConnected) { rec.obs?.disconnect(); live.delete(item.id); }
         const el = live.get(item.id)?.el
             ?? queryAll(item.sel).find(x => !x.dataset.qdTray || x.dataset.qdTray === item.id);
