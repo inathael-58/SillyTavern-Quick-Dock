@@ -349,6 +349,7 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 @keyframes qd_flash { to { outline-color: transparent; } }
 
 /* ---------------------------------------------------------------- settings drawer */
+.qd_settings .qd_version { opacity: 0.6; font-weight: normal; }
 .qd_settings .qd_set_grid { display: grid; grid-template-columns: 1fr minmax(140px, 55%); gap: 4px 8px; align-items: center; margin: 6px 0; }
 .qd_settings .qd_set_grid input { margin: 0; }
 .qd_settings .qd_set_btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 4px; }

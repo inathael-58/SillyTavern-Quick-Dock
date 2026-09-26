@@ -13,6 +13,8 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
+const VERSION = '1.3.0'; // keep in sync with manifest.json
+const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
 const MOVE_TOLERANCE = 10;   // px a finger may wobble during a long press
@@ -125,7 +127,7 @@ const save = () => ctx().saveSettingsDebounced();
 
 const toast = {
     ok: m => globalThis.toastr?.success(m, 'Quick Dock'),
-    info: m => globalThis.toastr?.info(m, 'Quick Dock'),
+    info: (m, o) => globalThis.toastr?.info(m, 'Quick Dock', o),
     warn: m => globalThis.toastr?.warning(m, 'Quick Dock'),
 };
 
@@ -1393,7 +1395,7 @@ function renderSettings() {
     <div id="qd_settings" class="qd_settings">
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>Quick Dock</b>
+                <b>Quick Dock <small class="qd_version">v${VERSION}</small></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
@@ -1622,6 +1624,44 @@ function renderSettingsLists() {
     }));
 }
 
+// ---------------------------------------------------------------- stale-code check
+//
+// SillyTavern loads extension files by a fixed URL, and a home-screen web app
+// on iOS rarely does a real reload, so after "Update" the old code can keep
+// running for a long time. Compare with the manifest on the server; if it is
+// newer, refresh the cached files explicitly and reload.
+
+let versionCheckedAt = 0;
+let versionToastShown = false;
+
+async function checkForNewVersion() {
+    if (versionToastShown || Date.now() - versionCheckedAt < 10 * 60_000) return;
+    versionCheckedAt = Date.now();
+    let remote;
+    try {
+        const res = await fetch(new URL('manifest.json', BASE_URL), { cache: 'no-store' });
+        if (!res.ok) return;
+        remote = String((await res.json())?.version ?? '');
+    } catch { return; }
+    if (!remote || remote === VERSION) return;
+    versionToastShown = true;
+    toast.info(`ติดตั้ง v${esc(remote)} ไว้แล้ว แต่หน้านี้ยังรัน v${VERSION} อยู่<br>แตะที่นี่เพื่อโหลดเวอร์ชันใหม่`, {
+        timeOut: 0, extendedTimeOut: 0, closeButton: true, escapeHtml: false,
+        onclick: () => reloadWithFreshFiles(),
+    });
+}
+
+async function reloadWithFreshFiles() {
+    try {
+        // cache: 'reload' fetches from the server and overwrites the browser's cached copy,
+        // so the page reload below picks up the new files.
+        await Promise.all(['index.js', 'style.css', 'manifest.json'].map(f =>
+            fetch(new URL(f, BASE_URL), { cache: 'reload' }).catch(() => null)));
+    } finally {
+        location.reload();
+    }
+}
+
 // ---------------------------------------------------------------- init
 
 function init() {
@@ -1637,9 +1677,11 @@ function init() {
     const { eventSource, event_types: E } = ctx();
     if (E?.APP_READY) eventSource.on(E.APP_READY, () => { syncTray(); renderSettingsLists(); });
     if (E?.CHAT_CHANGED) eventSource.on(E.CHAT_CHANGED, () => syncTray());
-    console.log(LOG, 'loaded');
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForNewVersion(); });
+    setTimeout(checkForNewVersion, 3000);
+    console.log(LOG, 'loaded', `v${VERSION}`);
 }
 
-globalThis.QuickDock = { settings, openPanel, closePanel, startPick, endPick, syncTray, releaseAll, scanFloating, buildSelector, runShortcut, computeArcSlots };
+globalThis.QuickDock = { VERSION, checkForNewVersion, reloadWithFreshFiles, settings, openPanel, closePanel, startPick, endPick, syncTray, releaseAll, scanFloating, buildSelector, runShortcut, computeArcSlots };
 
 if (typeof jQuery === 'function') jQuery(init); else init();
