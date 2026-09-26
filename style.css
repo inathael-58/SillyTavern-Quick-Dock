@@ -184,6 +184,15 @@
 #qd_panel .qd_slot_ph { display: none; font-size: 11px; opacity: 0.6; padding: 4px 8px; border: 1px dashed var(--SmartThemeBorderColor, #555); border-radius: 6px; }
 #qd_panel .qd_slot_cover { display: none; position: absolute; inset: -2px; border-radius: 6px; cursor: pointer; }
 
+/* Stand-in icon: the real button stays where its extension put it, invisible and untouchable; tapping the icon taps it. */
+#qd_panel .qd_slot:not(.qd_proxymode) .qd_proxy { display: none; }
+#qd_panel .qd_slot.qd_proxymode .qd_proxy { width: 60px; box-sizing: border-box; }
+[data-qd-proxy] {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    clip-path: inset(50%) !important;
+}
+
 /* Undo the extension's own "float over the screen" positioning while docked. */
 #qd_panel [data-qd-tray] {
     position: static !important;
@@ -228,8 +237,9 @@
 #qd_panel .qd_ed_iconprev { width: 26px; font-size: 20px; text-align: center; flex-shrink: 0; }
 #qd_panel .qd_ed_btns { display: flex; flex-wrap: wrap; gap: 4px; }
 #qd_panel .qd_ed_btns .menu_button { width: auto; margin: 0; padding: 6px 10px; white-space: nowrap; }
-#qd_panel .qd_editor[data-kind="tray"] .qd_ed_iconrow,
-#qd_panel .qd_editor[data-kind="tray"] .qd_icongrid,
+#qd_panel .qd_editor[data-kind="tray"]:not(.qd_proxyed) .qd_ed_iconrow,
+#qd_panel .qd_editor[data-kind="tray"]:not(.qd_proxyed) .qd_icongrid,
+#qd_panel .qd_editor:not([data-kind="tray"]) .qd_ed_proxy,
 #qd_panel .qd_editor[data-kind="tray"] .qd_ed_rebind,
 #qd_panel .qd_editor.qd_builtin .qd_ed_rebind,
 #qd_panel .qd_editor[data-kind="launcher"] .qd_ed_label,
@@ -339,6 +349,7 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 @keyframes qd_flash { to { outline-color: transparent; } }
 
 /* ---------------------------------------------------------------- settings drawer */
+.qd_settings .qd_version { opacity: 0.6; font-weight: normal; }
 .qd_settings .qd_set_grid { display: grid; grid-template-columns: 1fr minmax(140px, 55%); gap: 4px 8px; align-items: center; margin: 6px 0; }
 .qd_settings .qd_set_grid input { margin: 0; }
 .qd_settings .qd_set_btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 4px; }
