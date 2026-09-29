@@ -70,9 +70,9 @@
     padding: 8px;
     overflow-y: auto;
     overscroll-behavior: contain;
-    color: var(--SmartThemeBodyColor, #ddd);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1e1e28) 92%, transparent); /* card keeps the theme's own background so its text stays readable */
-    border: 1px solid var(--qd-border, #555);
+    color: var(--qd-card-fg, #ddd);
+    background: color-mix(in srgb, var(--qd-card-bg, #1e1e28) var(--qd-card-bg-op, 92%), transparent);
+    border: 1px solid var(--qd-card-border, #555);
     border-radius: 12px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
     font-family: var(--mainFontFamily, inherit);
@@ -177,11 +177,11 @@
 #qd_panel.qd_editing .qd_tray:has(.qd_slot) { display: flex; }
 #qd_panel .qd_tray:not(.qd_empty) + .qd_grid:not(:empty) {
     padding-top: 6px;
-    border-top: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--qd-card-border, #555) 60%, transparent);
 }
 #qd_panel .qd_slot { position: relative; display: flex; align-items: center; min-height: 28px; }
 #qd_panel .qd_slot.qd_gone { display: none; }
-#qd_panel .qd_slot_ph { display: none; font-size: 11px; opacity: 0.6; padding: 4px 8px; border: 1px dashed var(--SmartThemeBorderColor, #555); border-radius: 6px; }
+#qd_panel .qd_slot_ph { display: none; font-size: 11px; opacity: 0.6; padding: 4px 8px; border: 1px dashed var(--qd-card-border, #555); border-radius: 6px; }
 #qd_panel .qd_slot_cover { display: none; position: absolute; inset: -2px; border-radius: 6px; cursor: pointer; }
 
 /* Stand-in icon: the real button stays where its extension put it, invisible and untouchable; tapping the icon taps it. */
@@ -209,8 +209,8 @@
 }
 
 /* edit mode */
-#qd_panel.qd_editing .qd_sc { border-color: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 70%, transparent); border-style: dashed; }
-#qd_panel.qd_editing .qd_slot_cover { display: block; outline: 1px dashed var(--SmartThemeBorderColor, #555); }
+#qd_panel.qd_editing .qd_sc { border-color: color-mix(in srgb, var(--qd-card-border, #555) 70%, transparent); border-style: dashed; }
+#qd_panel.qd_editing .qd_slot_cover { display: block; outline: 1px dashed var(--qd-card-border, #555); }
 #qd_panel.qd_editing .qd_slot.qd_gone { display: flex; }
 #qd_panel.qd_editing .qd_slot.qd_gone .qd_slot_ph { display: block; }
 #qd_panel .qd_sc.qd_sel,
@@ -225,7 +225,7 @@
 #qd_panel .qd_addbtn { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 #qd_panel .qd_addbtn[hidden] { display: none; }
 #qd_panel .qd_addbtn > :first-child { width: 18px; text-align: center; }
-#qd_panel .qd_addbtn:active { background: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 35%, transparent); }
+#qd_panel .qd_addbtn:active { background: color-mix(in srgb, var(--qd-card-border, #555) 35%, transparent); }
 
 /* editor */
 #qd_panel .qd_editor { display: none; flex-direction: column; gap: 5px; width: var(--qd-card-w); max-width: 100%; }
@@ -279,7 +279,7 @@
     align-items: center;
     gap: 2px;
     padding-top: 6px;
-    border-top: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--qd-card-border, #555) 60%, transparent);
 }
 #qd_panel .qd_barbtn {
     display: flex;
@@ -292,7 +292,7 @@
     cursor: pointer;
     white-space: nowrap;
 }
-#qd_panel .qd_barbtn:active { opacity: 1; background: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 35%, transparent); }
+#qd_panel .qd_barbtn:active { opacity: 1; background: color-mix(in srgb, var(--qd-card-border, #555) 35%, transparent); }
 #qd_panel .qd_launcherbtn { display: none; }
 #qd_panel.qd_editing .qd_launcherbtn { display: flex; }
 #qd_panel .qd_editbtn { margin-left: auto; }
@@ -377,12 +377,13 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 /* ---------------------------------------------------------------- optional looks */
 html.qd-blur #qd_launcher,
 html.qd-blur #qd_arc .qd_btnface,
-html.qd-blur #qd_panel {
+html.qd-card-blur #qd_panel {
     -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
 }
 html.qd-noshadow #qd_launcher,
-html.qd-noshadow #qd_arc .qd_btnface { box-shadow: none; }
+html.qd-noshadow #qd_arc .qd_btnface,
+html.qd-card-noshadow #qd_panel { box-shadow: none; }
 
 /* ---------------------------------------------------------------- hover / press effects
  * Cheap on purpose: colour, outline or a transform on the inner face only (never on
