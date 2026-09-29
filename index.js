@@ -13,7 +13,7 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.3.1'; // keep in sync with manifest.json
+const VERSION = '1.4.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -37,12 +37,18 @@ const DEFAULTS = Object.freeze({
     bgColor: 'tint',
     borderColor: 'border',
     accentColor: 'quote',
-    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24' }),
+    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24', cardText: '#dddddd', cardBg: '#1e1e28', cardBorder: '#777777' }),
     bgOpacity: 85,                   // % — button backgrounds
     idleOpacity: 100,                // % — launcher while the dock is closed
     blur: false,                     // backdrop blur (costs GPU)
     shadow: true,
     fx: 'ring',                      // hover/press effect, see FX
+    cardTextColor: 'body',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
+    cardBgColor: 'tint',
+    cardBorderColor: 'border',
+    cardBgOpacity: 92,               // %
+    cardBlur: false,
+    cardShadow: true,
     icon: 'fa-solid fa-bolt',
     columns: 4,
     closeOnShortcut: true,
@@ -109,6 +115,7 @@ function settings() {
     const s = ext[MODULE];
     if (s.labelMode === undefined && s.showLabels === false) s.labelMode = 'hide'; // 1.1 setting
     delete s.showLabels;
+    if (s.cardBlur === undefined && s.blur !== undefined) s.cardBlur = !!s.blur; // before 1.4 one switch blurred buttons and card
     for (const [k, v] of Object.entries(DEFAULTS)) {
         if (s[k] === undefined) s[k] = Array.isArray(v) ? [] : (v && typeof v === 'object') ? { ...v } : v;
     }
@@ -459,12 +466,18 @@ function applyLook() {
     set('--qd-border', colorValue(s.borderColor, 'border') ?? 'var(--SmartThemeBorderColor)');
     set('--qd-accent', colorValue(s.accentColor, 'accent') ?? 'var(--SmartThemeQuoteColor)');
     set('--qd-bg-op', `${clamp(Number.isFinite(Number(s.bgOpacity)) ? Number(s.bgOpacity) : 85, 0, 100)}%`);
+    set('--qd-card-fg', colorValue(s.cardTextColor, 'cardText') ?? 'var(--SmartThemeBodyColor)');
+    set('--qd-card-bg', opaque(colorValue(s.cardBgColor, 'cardBg') ?? 'var(--SmartThemeBlurTintColor)'));
+    set('--qd-card-border', colorValue(s.cardBorderColor, 'cardBorder') ?? 'var(--SmartThemeBorderColor)');
+    set('--qd-card-bg-op', `${clamp(Number.isFinite(Number(s.cardBgOpacity)) ? Number(s.cardBgOpacity) : 92, 0, 100)}%`);
     set('--qd-idle-op', String(clamp(Number(s.idleOpacity) || 100, 15, 100) / 100));
     set('--qd-item', `${itemSize()}px`);
     set('--qd-icon', String(clamp(Number(s.iconScale) || DEFAULTS.iconScale, 25, 75) / 100));
     for (const k of Object.keys(FX)) root.classList.toggle(`qd-fx-${k}`, s.fx === k);
     root.classList.toggle('qd-blur', !!s.blur);
     root.classList.toggle('qd-noshadow', !s.shadow);
+    root.classList.toggle('qd-card-blur', !!s.cardBlur);
+    root.classList.toggle('qd-card-noshadow', !s.cardShadow);
 
     launcher.style.setProperty('--qd-size', `${clamp(Number(s.size) || DEFAULTS.size, 28, 90)}px`);
     launcher.innerHTML = iconHTML(s.icon || DEFAULTS.icon);
@@ -1460,6 +1473,16 @@ function renderSettings() {
                 </div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_shadow"> เงาใต้ปุ่ม</label>
                 <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_blur"> เบลอพื้นหลังใต้ปุ่ม (กิน GPU)</label>
+                <div class="qd_set_title">หน้าตาถาด dock (ปุ่มลอย + แถบล่าง)</div>
+                <div class="qd_set_grid">
+                    ${colorRow('qd_c_cardtext', 'สีตัวอักษร', 'cardTextColor', 'cardText')}
+                    ${colorRow('qd_c_cardbg', 'สีพื้นถาด', 'cardBgColor', 'cardBg')}
+                    ${colorRow('qd_c_cardborder', 'สีขอบถาด', 'cardBorderColor', 'cardBorder')}
+                    <label for="qd_cardop">ความทึบพื้นถาด <output id="qd_cardop_out"></output></label>
+                    <input type="range" id="qd_cardop" min="0" max="100" step="5">
+                </div>
+                <label class="checkbox_label"><input type="checkbox" id="qd_cardshadow"> เงาใต้ถาด</label>
+                <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_cardblur"> เบลอพื้นหลังใต้ถาด (กิน GPU)</label>
                 <div class="qd_set_btns"><div id="qd_look_reset" class="menu_button"><i class="fa-solid fa-rotate-left"></i> คืนค่าหน้าตาเริ่มต้น</div></div>
                 <div class="qd_set_btns">
                     <div id="qd_add_sc" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มช็อตคัท</div>
@@ -1500,6 +1523,8 @@ function renderSettings() {
     const restyle = () => { applyLook(); if (isOpen()) renderPanel(); };
     bindCheck('qd_shadow', 'shadow', restyle);
     bindCheck('qd_blur', 'blur', restyle);
+    bindCheck('qd_cardshadow', 'cardShadow', restyle);
+    bindCheck('qd_cardblur', 'cardBlur', restyle);
     const bindSelect = (id, key) => {
         $(id).value = s[key];
         $(id).addEventListener('change', e => { s[key] = e.target.value; save(); restyle(); });
@@ -1517,7 +1542,9 @@ function renderSettings() {
     };
     const showBg = bindRange('qd_bgop', 'bgOpacity');
     const showIdle = bindRange('qd_idleop', 'idleOpacity');
-    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent']];
+    const showCardOp = bindRange('qd_cardop', 'cardBgOpacity');
+    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent'],
+        ['qd_c_cardtext', 'cardTextColor', 'cardText'], ['qd_c_cardbg', 'cardBgColor', 'cardBg'], ['qd_c_cardborder', 'cardBorderColor', 'cardBorder']];
     const showColors = () => colorInputs.forEach(([id, key, which]) => {
         $(id).value = s[key];
         $(`${id}_pick`).value = s.customColors[which];
@@ -1530,13 +1557,16 @@ function renderSettings() {
     showColors();
     $('qd_preview').addEventListener('click', () => openPanel());
     $('qd_look_reset').addEventListener('click', () => {
-        for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx']) s[k] = DEFAULTS[k];
+        for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx',
+            'cardTextColor', 'cardBgColor', 'cardBorderColor', 'cardBgOpacity', 'cardBlur', 'cardShadow']) s[k] = DEFAULTS[k];
         s.customColors = { ...DEFAULTS.customColors };
         save();
         for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale']]) $(id).value = s[key];
         $('qd_shadow').checked = s.shadow;
         $('qd_blur').checked = s.blur;
-        showBg(); showIdle(); showColors();
+        $('qd_cardshadow').checked = s.cardShadow;
+        $('qd_cardblur').checked = s.cardBlur;
+        showBg(); showIdle(); showCardOp(); showColors();
         restyle();
     });
     bindCheck('qd_close_sc', 'closeOnShortcut');
