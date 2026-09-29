@@ -13,7 +13,7 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.3.0'; // keep in sync with manifest.json
+const VERSION = '1.3.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -432,6 +432,21 @@ function colorValue(key, which) {
     return v ? `var(${v})` : null;
 }
 
+// Theme colours like --SmartThemeBlurTintColor carry their own alpha, which would multiply with
+// the opacity slider. Keep only the RGB so the slider alone decides how see-through buttons are.
+const RELATIVE_COLOR = globalThis.CSS?.supports?.('color', 'rgb(from red r g b / 1)') ?? false;
+let colorProbe = null;
+function opaque(color) {
+    if (RELATIVE_COLOR) return `rgb(from ${color} r g b / 1)`;
+    // Older browsers (iOS < 16.4): resolve to a fixed colour now; it refreshes whenever applyLook runs.
+    colorProbe ??= Object.assign(document.createElement('span'), { hidden: true });
+    if (!colorProbe.isConnected) document.body.append(colorProbe);
+    colorProbe.style.color = '';
+    colorProbe.style.color = color;
+    const m = getComputedStyle(colorProbe).color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+    return m ? `rgb(${m[1]}, ${m[2]}, ${m[3]})` : color;
+}
+
 const itemSize = () => clamp(Number(settings().itemSize) || DEFAULTS.itemSize, 30, 80);
 const labelsVisible = () => { const m = settings().labelMode; return m === 'show' || (m === 'edit' && editing); };
 
@@ -440,7 +455,7 @@ function applyLook() {
     const root = document.documentElement;
     const set = (k, v) => root.style.setProperty(k, v);
     set('--qd-fg', colorValue(s.iconColor, 'icon') ?? 'var(--SmartThemeBodyColor)');
-    set('--qd-bg', colorValue(s.bgColor, 'bg') ?? 'var(--SmartThemeBlurTintColor)');
+    set('--qd-bg', opaque(colorValue(s.bgColor, 'bg') ?? 'var(--SmartThemeBlurTintColor)'));
     set('--qd-border', colorValue(s.borderColor, 'border') ?? 'var(--SmartThemeBorderColor)');
     set('--qd-accent', colorValue(s.accentColor, 'accent') ?? 'var(--SmartThemeQuoteColor)');
     set('--qd-bg-op', `${clamp(Number.isFinite(Number(s.bgOpacity)) ? Number(s.bgOpacity) : 85, 0, 100)}%`);
