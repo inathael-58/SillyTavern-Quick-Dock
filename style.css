@@ -235,6 +235,7 @@
 #qd_panel .qd_editor input { margin: 0; width: 100%; box-sizing: border-box; font-size: 16px; }
 #qd_panel .qd_ed_iconrow { display: flex; align-items: center; gap: 6px; }
 #qd_panel .qd_ed_iconprev { width: 26px; font-size: 20px; text-align: center; flex-shrink: 0; }
+#qd_panel .qd_ed_iconrow .menu_button { width: auto; margin: 0; padding: 6px 10px; flex-shrink: 0; }
 #qd_panel .qd_ed_btns { display: flex; flex-wrap: wrap; gap: 4px; }
 #qd_panel .qd_ed_btns .menu_button { width: auto; margin: 0; padding: 6px 10px; white-space: nowrap; }
 #qd_panel .qd_editor[data-kind="tray"]:not(.qd_proxyed) .qd_ed_iconrow,
@@ -418,6 +419,15 @@ html.qd-face-inset #qd_arc .qd_btnface {
     background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.06));
 }
 html.qd-face-inset { --qd-inset-sh: inset 0 3px 6px rgba(0, 0, 0, 0.4); }
+
+/* picture icons: sized like an icon, or ('fill') covering the whole button in its shape */
+.qd_img { display: block; width: 1.25em; height: 1.25em; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+html.qd-imgfill #qd_launcher > .qd_img,
+html.qd-imgfill #qd_arc .qd_btnface > .qd_img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+html.qd-imgfill #qd_panel .qd_sc .qd_btnface > .qd_img { width: auto; height: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--qd-radius, 50%); }
+.qd_set_iconprev .qd_img, .qd_ed_iconprev .qd_img { margin: 0 auto; }
+html.qd-icon-shadow .qd_img { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+html.qd-icon-glow .qd_img { filter: drop-shadow(0 0 4px var(--qd-accent, #e18a24)); }
 
 /* icon effects — also on the grid's faces */
 html.qd-icon-shadow #qd_launcher,

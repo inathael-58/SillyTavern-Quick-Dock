@@ -50,6 +50,7 @@ const DEFAULTS = Object.freeze({
     borderStyle: 'solid',            // see BORDER_STYLES
     glow: 'none',                    // see GLOWS — a still glow in the accent colour
     iconFx: 'none',                  // see ICON_FX
+    imageFit: 'fill',                // picture icons: 'fill' the whole button | 'icon' sized like an icon
     cardTextColor: 'body',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
     cardBgColor: 'tint',
     cardBorderColor: 'border',
@@ -113,6 +114,7 @@ const FACES = Object.freeze({
 const BORDER_STYLES = Object.freeze({ solid: 'เส้นทึบ', dashed: 'เส้นประ', dotted: 'จุดไข่ปลา', double: 'เส้นคู่' });
 const GLOWS = Object.freeze({ none: 'ไม่มี', soft: 'อ่อน ๆ', strong: 'เข้ม' });
 const ICON_FX = Object.freeze({ none: 'ไม่มี', shadow: 'เงาไอคอน', glow: 'ไอคอนเรืองแสง' });
+const IMAGE_FITS = Object.freeze({ fill: 'เต็มปุ่ม', icon: 'ขนาดเท่าไอคอน' });
 
 // One-tap looks. `accentBorder`: the border takes the accent colour (neon).
 const PRESETS = Object.freeze({
@@ -199,17 +201,60 @@ function visibleArea() {
     return vv ? { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height } : { x: 0, y: 0, w: vw, h: vh };
 }
 
-/** Font Awesome classes → <i>; anything else (emoji, a letter) → text. */
+/** An uploaded picture (data: URL), a link, or a path on the SillyTavern server. */
+const isImage = v => /^(data:image\/[\w+.-]+;base64,|https?:\/\/|\/[^/])/i.test(String(v ?? '').trim());
+
+/** Picture → <img>; Font Awesome classes → <i>; anything else (emoji, a letter) → text. */
 function iconHTML(icon) {
     const v = String(icon ?? '').trim();
+    if (isImage(v)) return `<img class="qd_img" src="${esc(v)}" alt="" draggable="false" decoding="async">`;
     if (/(^|\s)fa-/.test(v)) return `<i class="${esc(v)}"></i>`;
     return `<span class="qd_emoji">${esc(v || '•')}</span>`;
 }
 
 function cleanIcon(v) {
     v = String(v ?? '').trim();
+    if (isImage(v)) return v.startsWith('data:') ? v.replace(/\s+/g, '') : v.replace(/\s+/g, '%20').slice(0, 2000);
     if (/(^|\s)fa-/.test(v)) return v.replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ');
     return v.slice(0, 8);
+}
+
+/** What the icon text box shows: an uploaded picture's data: URL is long and unreadable, so leave the box empty. */
+function showIconInput(inp, icon) {
+    const uploaded = String(icon ?? '').startsWith('data:');
+    inp.value = uploaded ? '' : icon ?? '';
+    inp.placeholder = uploaded ? 'ใช้รูปที่อัปโหลดอยู่ — พิมพ์หรือแตะไอคอนเพื่อเปลี่ยน' : 'อีโมจิ · fa-solid fa-star · ลิงก์รูป';
+}
+
+/**
+ * A picture for a button, stored in the settings: small files (and GIFs, which would lose their
+ * animation) as they are, anything bigger scaled down — buttons are at most 90px, 2× for sharp screens.
+ */
+async function imageToDataUrl(file) {
+    const read = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+    if (!file.type.startsWith('image/')) throw new Error('ไม่ใช่ไฟล์รูป');
+    if (file.size <= 40_000 || (file.type === 'image/gif' && file.size <= 300_000)) return await read(file);
+    if (file.type === 'image/gif') throw new Error('GIF ใหญ่เกิน 300 KB');
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 180 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bmp.width * k));
+    canvas.height = Math.max(1, Math.round(bmp.height * k));
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close?.();
+    const webp = canvas.toDataURL('image/webp', 0.9);
+    return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
+}
+
+/** Wire an image button + hidden file input; `use` receives the data: URL. */
+function wireImagePicker(btn, input, use) {
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+        const f = input.files?.[0];
+        input.value = '';
+        if (!f) return;
+        try { use(await imageToDataUrl(f)); } catch (err) { toast.warn(`ใช้รูปนี้ไม่ได้: ${err?.message || err}`); }
+    });
 }
 
 const iconGridHTML = () => ICONS.map(ic => `<div class="qd_ic" role="button" tabindex="0" data-icon="${esc(ic)}" title="${esc(ic)}">${iconHTML(ic)}</div>`).join('');
@@ -393,7 +438,9 @@ function buildUI() {
             <input type="text" class="text_pole qd_ed_label" placeholder="ชื่อ" enterkeyhint="done">
             <div class="qd_ed_iconrow">
                 <span class="qd_ed_iconprev"></span>
-                <input type="text" class="text_pole qd_ed_icon" placeholder="อีโมจิ หรือ fa-solid fa-star" enterkeyhint="done">
+                <input type="text" class="text_pole qd_ed_icon" placeholder="อีโมจิ · fa-solid fa-star · ลิงก์รูป" enterkeyhint="done">
+                <div class="menu_button qd_ed_img" title="ใช้รูปภาพจากเครื่อง (PNG พื้นใส หรือ GIF ได้)"><i class="fa-solid fa-image"></i></div>
+                <input type="file" class="qd_ed_file" accept="image/*" hidden>
             </div>
             <div class="qd_icongrid">${iconGridHTML()}</div>
             <div class="qd_ed_btns">
@@ -524,6 +571,7 @@ function applyLook() {
     for (const k of Object.keys(FACES)) root.classList.toggle(`qd-face-${k}`, s.faceStyle === k);
     for (const k of Object.keys(GLOWS)) root.classList.toggle(`qd-glow-${k}`, s.glow === k);
     for (const k of Object.keys(ICON_FX)) root.classList.toggle(`qd-icon-${k}`, s.iconFx === k);
+    root.classList.toggle('qd-imgfill', s.imageFit !== 'icon');
     root.classList.toggle('qd-blur', !!s.blur);
     root.classList.toggle('qd-noshadow', !s.shadow);
     root.classList.toggle('qd-card-blur', !!s.cardBlur);
@@ -852,7 +900,7 @@ function openEditor(kind, id) {
         : 'ปุ่มว่างหรือกดไม่ได้ใน dock? — ปล่อยปุ่มจริงไว้ที่เดิม (ซ่อนไว้) แล้วแสดงไอคอนที่กดแทนปุ่มนั้นได้';
     ed.querySelector('.qd_ed_title').textContent = kind === 'launcher' ? 'ไอคอนปุ่มหลัก' : kind === 'tray' ? 'ปุ่มลอยใน dock' : item.builtin ? `ช็อตคัท: ${BUILTINS[item.builtin]?.hint ?? ''}` : 'ช็อตคัท';
     ed.querySelector('.qd_ed_label').value = kind === 'launcher' ? '' : item.label ?? '';
-    ed.querySelector('.qd_ed_icon').value = item.icon ?? '';
+    showIconInput(ed.querySelector('.qd_ed_icon'), item.icon);
     ed.querySelector('.qd_ed_iconprev').innerHTML = iconHTML(item.icon);
     const del = ed.querySelector('.qd_ed_del');
     del.innerHTML = kind === 'sc' ? '<i class="fa-solid fa-trash"></i>' : '<i class="fa-solid fa-arrow-up-from-bracket"></i> คืนหน้าจอ';
@@ -889,6 +937,10 @@ function wireEditor() {
     });
     ed.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); }));
     ed.querySelector('.qd_ed_icon').addEventListener('input', e => setIcon(e.target.value));
+    wireImagePicker(ed.querySelector('.qd_ed_img'), ed.querySelector('.qd_ed_file'), url => {
+        setIcon(url);
+        showIconInput(ed.querySelector('.qd_ed_icon'), url);
+    });
     ed.querySelector('.qd_icongrid').addEventListener('click', e => {
         const ic = e.target.closest('[data-icon]')?.dataset.icon;
         if (!ic) return;
@@ -1494,7 +1546,9 @@ function renderSettings() {
                 <div class="qd_set_title">ไอคอนปุ่มหลัก</div>
                 <div class="qd_set_iconrow">
                     <span id="qd_icon_prev" class="qd_set_iconprev"></span>
-                    <input type="text" id="qd_icon" class="text_pole" placeholder="อีโมจิ หรือ fa-solid fa-bolt">
+                    <input type="text" id="qd_icon" class="text_pole" placeholder="อีโมจิ · fa-solid fa-bolt · ลิงก์รูป">
+                    <div id="qd_icon_img" class="menu_button qd_inline_btn" title="ใช้รูปภาพจากเครื่อง (PNG พื้นใส หรือ GIF ได้)"><i class="fa-solid fa-image"></i> รูป</div>
+                    <input type="file" id="qd_icon_file" accept="image/*" hidden>
                 </div>
                 <div id="qd_icon_grid" class="qd_icongrid">${iconGridHTML()}</div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_close_sc"> ปิดแผงหลังกดช็อตคัท</label>
@@ -1540,6 +1594,8 @@ function renderSettings() {
                     <select id="qd_glow" class="text_pole">${options(GLOWS)}</select>
                     <label for="qd_iconfx">เอฟเฟกต์ไอคอน</label>
                     <select id="qd_iconfx" class="text_pole">${options(ICON_FX)}</select>
+                    <label for="qd_imgfit">ไอคอนที่เป็นรูปภาพ</label>
+                    <select id="qd_imgfit" class="text_pole">${options(IMAGE_FITS)}</select>
                 </div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_shadow"> เงาใต้ปุ่ม</label>
                 <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_blur"> เบลอพื้นหลังใต้ปุ่ม (กิน GPU)</label>
@@ -1606,6 +1662,7 @@ function renderSettings() {
     bindSelect('qd_bstyle', 'borderStyle');
     bindSelect('qd_glow', 'glow');
     bindSelect('qd_iconfx', 'iconFx');
+    bindSelect('qd_imgfit', 'imageFit');
     bindNum('qd_itemsize', 'itemSize', 30, 80);
     bindNum('qd_iconscale', 'iconScale', 25, 75);
     const bindRange = (id, key, unit = '%') => {
@@ -1631,7 +1688,7 @@ function renderSettings() {
     $('qd_preview').addEventListener('click', () => openPanel());
     const syncLook = () => {
         for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale'],
-            ['qd_shape', 'shape'], ['qd_face', 'faceStyle'], ['qd_bstyle', 'borderStyle'], ['qd_glow', 'glow'], ['qd_iconfx', 'iconFx']]) $(id).value = s[key];
+            ['qd_shape', 'shape'], ['qd_face', 'faceStyle'], ['qd_bstyle', 'borderStyle'], ['qd_glow', 'glow'], ['qd_iconfx', 'iconFx'], ['qd_imgfit', 'imageFit']]) $(id).value = s[key];
         for (const [id, key] of [['qd_shadow', 'shadow'], ['qd_blur', 'blur'], ['qd_cardshadow', 'cardShadow'], ['qd_cardblur', 'cardBlur']]) $(id).checked = !!s[key];
         showRanges.forEach(show => show());
         showColors();
@@ -1653,7 +1710,7 @@ function renderSettings() {
     });
     $('qd_look_reset').addEventListener('click', () => {
         for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx',
-            'shape', 'faceStyle', 'gradColor', 'borderWidth', 'borderStyle', 'glow', 'iconFx',
+            'shape', 'faceStyle', 'gradColor', 'borderWidth', 'borderStyle', 'glow', 'iconFx', 'imageFit',
             'cardTextColor', 'cardBgColor', 'cardBorderColor', 'cardBgOpacity', 'cardBlur', 'cardShadow']) s[k] = DEFAULTS[k];
         s.customColors = { ...DEFAULTS.customColors };
         save();
@@ -1674,6 +1731,7 @@ function renderSettings() {
         syncSettingsIcon();
     };
     $('qd_icon').addEventListener('change', e => setLauncherIcon(e.target.value));
+    wireImagePicker($('qd_icon_img'), $('qd_icon_file'), setLauncherIcon);
     $('qd_icon_grid').addEventListener('click', e => {
         const ic = e.target.closest('[data-icon]')?.dataset.icon;
         if (ic) setLauncherIcon(ic);
@@ -1692,7 +1750,7 @@ function syncSettingsIcon() {
     const prev = document.getElementById('qd_icon_prev');
     const inp = document.getElementById('qd_icon');
     if (prev) prev.innerHTML = iconHTML(s.icon);
-    if (inp) inp.value = s.icon;
+    if (inp) showIconInput(inp, s.icon);
 }
 
 function renderScan() {
