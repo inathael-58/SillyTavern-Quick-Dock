@@ -13,7 +13,7 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.4.0'; // keep in sync with manifest.json
+const VERSION = '1.5.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -37,12 +37,19 @@ const DEFAULTS = Object.freeze({
     bgColor: 'tint',
     borderColor: 'border',
     accentColor: 'quote',
-    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24', cardText: '#dddddd', cardBg: '#1e1e28', cardBorder: '#777777' }),
+    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24', grad: '#7a5cff', cardText: '#dddddd', cardBg: '#1e1e28', cardBorder: '#777777' }),
     bgOpacity: 85,                   // % — button backgrounds
     idleOpacity: 100,                // % — launcher while the dock is closed
     blur: false,                     // backdrop blur (costs GPU)
     shadow: true,
     fx: 'ring',                      // hover/press effect, see FX
+    shape: 'circle',                 // launcher + arc buttons, see SHAPES
+    faceStyle: 'flat',               // see FACES
+    gradColor: 'quote',              // second colour of the 'gradient' face
+    borderWidth: 1,                  // px, 0–4
+    borderStyle: 'solid',            // see BORDER_STYLES
+    glow: 'none',                    // see GLOWS — a still glow in the accent colour
+    iconFx: 'none',                  // see ICON_FX
     cardTextColor: 'body',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
     cardBgColor: 'tint',
     cardBorderColor: 'border',
@@ -82,6 +89,42 @@ const FX = Object.freeze({
     grow: 'ขยายขึ้นเล็กน้อย',
     press: 'ยุบลงตอนกด',
     lift: 'ลอยขึ้นเล็กน้อย',
+});
+
+// Button decoration. All static (no animation), so it costs no more GPU than the plain look.
+const SHAPES = Object.freeze({
+    circle: ['วงกลม', '50%'],
+    squircle: ['สี่เหลี่ยมมนมาก', '32%'],
+    rounded: ['สี่เหลี่ยมมน', '20%'],
+    square: ['สี่เหลี่ยม', '6px'],
+    leaf: ['ใบไม้', '50% 10%'],
+    drop: ['หยดน้ำ', '50% 10% 50% 50%'],
+});
+
+const FACES = Object.freeze({
+    flat: 'เรียบ',
+    gradient: 'ไล่เฉดสี',
+    glossy: 'มันวาว',
+    glass: 'แก้วใส',
+    raised: 'นูน 3 มิติ',
+    inset: 'บุ๋มลง',
+});
+
+const BORDER_STYLES = Object.freeze({ solid: 'เส้นทึบ', dashed: 'เส้นประ', dotted: 'จุดไข่ปลา', double: 'เส้นคู่' });
+const GLOWS = Object.freeze({ none: 'ไม่มี', soft: 'อ่อน ๆ', strong: 'เข้ม' });
+const ICON_FX = Object.freeze({ none: 'ไม่มี', shadow: 'เงาไอคอน', glow: 'ไอคอนเรืองแสง' });
+
+// One-tap looks. `accentBorder`: the border takes the accent colour (neon).
+const PRESETS = Object.freeze({
+    classic: ['คลาสสิก (ค่าเริ่มต้น)', { shape: 'circle', faceStyle: 'flat', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'none', shadow: true, bgOpacity: 85 }],
+    minimal: ['มินิมอล', { shape: 'squircle', faceStyle: 'flat', borderWidth: 0, borderStyle: 'solid', glow: 'none', iconFx: 'none', shadow: false }],
+    glass: ['แก้วใส', { shape: 'circle', faceStyle: 'glass', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'shadow', shadow: true, bgOpacity: 45 }],
+    candy: ['ลูกอมมันวาว', { shape: 'squircle', faceStyle: 'glossy', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'shadow', shadow: true, bgOpacity: 90 }],
+    gradient: ['ไล่เฉดสี', { shape: 'rounded', faceStyle: 'gradient', borderWidth: 0, borderStyle: 'solid', glow: 'soft', iconFx: 'shadow', shadow: true, bgOpacity: 90 }],
+    neon: ['นีออน', { shape: 'circle', faceStyle: 'flat', borderWidth: 2, borderStyle: 'solid', glow: 'strong', iconFx: 'glow', shadow: false, bgOpacity: 80, accentBorder: true }],
+    raised: ['ปุ่มนูน', { shape: 'rounded', faceStyle: 'raised', borderWidth: 0, borderStyle: 'solid', glow: 'none', iconFx: 'shadow', shadow: true, bgOpacity: 100 }],
+    leaf: ['ใบไม้', { shape: 'leaf', faceStyle: 'gradient', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'none', shadow: true, bgOpacity: 90 }],
+    stamp: ['แสตมป์', { shape: 'square', faceStyle: 'inset', borderWidth: 2, borderStyle: 'dashed', glow: 'none', iconFx: 'none', shadow: false, bgOpacity: 95 }],
 });
 
 const BUILTINS = Object.freeze({
@@ -474,6 +517,13 @@ function applyLook() {
     set('--qd-item', `${itemSize()}px`);
     set('--qd-icon', String(clamp(Number(s.iconScale) || DEFAULTS.iconScale, 25, 75) / 100));
     for (const k of Object.keys(FX)) root.classList.toggle(`qd-fx-${k}`, s.fx === k);
+    set('--qd-radius', (SHAPES[s.shape] ?? SHAPES.circle)[1]);
+    set('--qd-bw', `${clamp(Number.isFinite(Number(s.borderWidth)) ? Math.round(Number(s.borderWidth)) : 1, 0, 4)}px`);
+    set('--qd-bstyle', BORDER_STYLES[s.borderStyle] ? s.borderStyle : 'solid');
+    set('--qd-grad', opaque(colorValue(s.gradColor, 'grad') ?? 'var(--SmartThemeQuoteColor)'));
+    for (const k of Object.keys(FACES)) root.classList.toggle(`qd-face-${k}`, s.faceStyle === k);
+    for (const k of Object.keys(GLOWS)) root.classList.toggle(`qd-glow-${k}`, s.glow === k);
+    for (const k of Object.keys(ICON_FX)) root.classList.toggle(`qd-icon-${k}`, s.iconFx === k);
     root.classList.toggle('qd-blur', !!s.blur);
     root.classList.toggle('qd-noshadow', !s.shadow);
     root.classList.toggle('qd-card-blur', !!s.cardBlur);
@@ -1417,6 +1467,8 @@ function colorRow(id, label, key, which) {
         </div>`;
 }
 
+const options = obj => Object.entries(obj).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+
 function renderSettings() {
     const s = settings();
     const html = `
@@ -1469,7 +1521,25 @@ function renderSettings() {
                     <label for="qd_idleop">ความทึบปุ่มหลักตอนปิด <output id="qd_idleop_out"></output></label>
                     <input type="range" id="qd_idleop" min="15" max="100" step="5">
                     <label for="qd_fx">เอฟเฟกต์ตอนชี้/กด</label>
-                    <select id="qd_fx" class="text_pole">${Object.entries(FX).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
+                    <select id="qd_fx" class="text_pole">${options(FX)}</select>
+                </div>
+                <div class="qd_set_title">ตกแต่งปุ่ม (ปุ่มหลัก + ช็อตคัทในวงโค้ง)</div>
+                <div class="qd_set_grid">
+                    <label for="qd_preset">ชุดสำเร็จรูป</label>
+                    <select id="qd_preset" class="text_pole"><option value="">— เลือกเพื่อใช้ —</option>${Object.entries(PRESETS).map(([k, [name]]) => `<option value="${k}">${esc(name)}</option>`).join('')}</select>
+                    <label for="qd_shape">รูปทรง</label>
+                    <select id="qd_shape" class="text_pole">${Object.entries(SHAPES).map(([k, [name]]) => `<option value="${k}">${esc(name)}</option>`).join('')}</select>
+                    <label for="qd_face">ลายพื้นปุ่ม</label>
+                    <select id="qd_face" class="text_pole">${options(FACES)}</select>
+                    ${colorRow('qd_c_grad', 'สีไล่เฉด (ลายไล่เฉดสี)', 'gradColor', 'grad')}
+                    <label for="qd_bw">ความหนาขอบ <output id="qd_bw_out"></output></label>
+                    <input type="range" id="qd_bw" min="0" max="4" step="1">
+                    <label for="qd_bstyle">ลายเส้นขอบ</label>
+                    <select id="qd_bstyle" class="text_pole">${options(BORDER_STYLES)}</select>
+                    <label for="qd_glow">เรืองแสงรอบปุ่ม (สีเน้น)</label>
+                    <select id="qd_glow" class="text_pole">${options(GLOWS)}</select>
+                    <label for="qd_iconfx">เอฟเฟกต์ไอคอน</label>
+                    <select id="qd_iconfx" class="text_pole">${options(ICON_FX)}</select>
                 </div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_shadow"> เงาใต้ปุ่ม</label>
                 <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_blur"> เบลอพื้นหลังใต้ปุ่ม (กิน GPU)</label>
@@ -1531,19 +1601,22 @@ function renderSettings() {
     };
     bindSelect('qd_labelmode', 'labelMode');
     bindSelect('qd_fx', 'fx');
+    bindSelect('qd_shape', 'shape');
+    bindSelect('qd_face', 'faceStyle');
+    bindSelect('qd_bstyle', 'borderStyle');
+    bindSelect('qd_glow', 'glow');
+    bindSelect('qd_iconfx', 'iconFx');
     bindNum('qd_itemsize', 'itemSize', 30, 80);
     bindNum('qd_iconscale', 'iconScale', 25, 75);
-    const bindRange = (id, key) => {
+    const bindRange = (id, key, unit = '%') => {
         const out = $(`${id}_out`);
-        const show = () => { $(id).value = s[key]; out.textContent = `${s[key]}%`; };
+        const show = () => { $(id).value = s[key]; out.textContent = `${s[key]}${unit}`; };
         show();
-        $(id).addEventListener('input', e => { s[key] = Number(e.target.value); out.textContent = `${s[key]}%`; save(); applyLook(); });
+        $(id).addEventListener('input', e => { s[key] = Number(e.target.value); out.textContent = `${s[key]}${unit}`; save(); applyLook(); });
         return show;
     };
-    const showBg = bindRange('qd_bgop', 'bgOpacity');
-    const showIdle = bindRange('qd_idleop', 'idleOpacity');
-    const showCardOp = bindRange('qd_cardop', 'cardBgOpacity');
-    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent'],
+    const showRanges = [bindRange('qd_bgop', 'bgOpacity'), bindRange('qd_idleop', 'idleOpacity'), bindRange('qd_cardop', 'cardBgOpacity'), bindRange('qd_bw', 'borderWidth', 'px')];
+    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent'], ['qd_c_grad', 'gradColor', 'grad'],
         ['qd_c_cardtext', 'cardTextColor', 'cardText'], ['qd_c_cardbg', 'cardBgColor', 'cardBg'], ['qd_c_cardborder', 'cardBorderColor', 'cardBorder']];
     const showColors = () => colorInputs.forEach(([id, key, which]) => {
         $(id).value = s[key];
@@ -1556,18 +1629,35 @@ function renderSettings() {
     }
     showColors();
     $('qd_preview').addEventListener('click', () => openPanel());
+    const syncLook = () => {
+        for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale'],
+            ['qd_shape', 'shape'], ['qd_face', 'faceStyle'], ['qd_bstyle', 'borderStyle'], ['qd_glow', 'glow'], ['qd_iconfx', 'iconFx']]) $(id).value = s[key];
+        for (const [id, key] of [['qd_shadow', 'shadow'], ['qd_blur', 'blur'], ['qd_cardshadow', 'cardShadow'], ['qd_cardblur', 'cardBlur']]) $(id).checked = !!s[key];
+        showRanges.forEach(show => show());
+        showColors();
+        restyle();
+    };
+    $('qd_preset').addEventListener('change', e => {
+        const [, look] = PRESETS[e.target.value] ?? [];
+        e.target.value = '';
+        if (!look) return;
+        const { accentBorder, ...rest } = look;
+        Object.assign(s, rest);
+        if (accentBorder) {
+            s.borderColor = s.accentColor;
+            if (s.accentColor === 'custom') s.customColors.border = s.customColors.accent;
+        }
+        save();
+        syncLook();
+        if (!isOpen()) openPanel();
+    });
     $('qd_look_reset').addEventListener('click', () => {
         for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx',
+            'shape', 'faceStyle', 'gradColor', 'borderWidth', 'borderStyle', 'glow', 'iconFx',
             'cardTextColor', 'cardBgColor', 'cardBorderColor', 'cardBgOpacity', 'cardBlur', 'cardShadow']) s[k] = DEFAULTS[k];
         s.customColors = { ...DEFAULTS.customColors };
         save();
-        for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale']]) $(id).value = s[key];
-        $('qd_shadow').checked = s.shadow;
-        $('qd_blur').checked = s.blur;
-        $('qd_cardshadow').checked = s.cardShadow;
-        $('qd_cardblur').checked = s.cardBlur;
-        showBg(); showIdle(); showCardOp(); showColors();
-        restyle();
+        syncLook();
     });
     bindCheck('qd_close_sc', 'closeOnShortcut');
     bindCheck('qd_close_tray', 'closeOnTray');
