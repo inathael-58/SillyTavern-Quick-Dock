@@ -13,7 +13,7 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.4.0'; // keep in sync with manifest.json
+const VERSION = '1.5.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -37,12 +37,20 @@ const DEFAULTS = Object.freeze({
     bgColor: 'tint',
     borderColor: 'border',
     accentColor: 'quote',
-    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24', cardText: '#dddddd', cardBg: '#1e1e28', cardBorder: '#777777' }),
+    customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24', grad: '#7a5cff', cardText: '#dddddd', cardBg: '#1e1e28', cardBorder: '#777777' }),
     bgOpacity: 85,                   // % — button backgrounds
     idleOpacity: 100,                // % — launcher while the dock is closed
     blur: false,                     // backdrop blur (costs GPU)
     shadow: true,
     fx: 'ring',                      // hover/press effect, see FX
+    shape: 'circle',                 // launcher + arc buttons, see SHAPES
+    faceStyle: 'flat',               // see FACES
+    gradColor: 'quote',              // second colour of the 'gradient' face
+    borderWidth: 1,                  // px, 0–4
+    borderStyle: 'solid',            // see BORDER_STYLES
+    glow: 'none',                    // see GLOWS — a still glow in the accent colour
+    iconFx: 'none',                  // see ICON_FX
+    imageFit: 'fill',                // picture icons: 'fill' the whole button | 'icon' sized like an icon
     cardTextColor: 'body',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
     cardBgColor: 'tint',
     cardBorderColor: 'border',
@@ -82,6 +90,43 @@ const FX = Object.freeze({
     grow: 'ขยายขึ้นเล็กน้อย',
     press: 'ยุบลงตอนกด',
     lift: 'ลอยขึ้นเล็กน้อย',
+});
+
+// Button decoration. All static (no animation), so it costs no more GPU than the plain look.
+const SHAPES = Object.freeze({
+    circle: ['วงกลม', '50%'],
+    squircle: ['สี่เหลี่ยมมนมาก', '32%'],
+    rounded: ['สี่เหลี่ยมมน', '20%'],
+    square: ['สี่เหลี่ยม', '6px'],
+    leaf: ['ใบไม้', '50% 10%'],
+    drop: ['หยดน้ำ', '50% 10% 50% 50%'],
+});
+
+const FACES = Object.freeze({
+    flat: 'เรียบ',
+    gradient: 'ไล่เฉดสี',
+    glossy: 'มันวาว',
+    glass: 'แก้วใส',
+    raised: 'นูน 3 มิติ',
+    inset: 'บุ๋มลง',
+});
+
+const BORDER_STYLES = Object.freeze({ solid: 'เส้นทึบ', dashed: 'เส้นประ', dotted: 'จุดไข่ปลา', double: 'เส้นคู่' });
+const GLOWS = Object.freeze({ none: 'ไม่มี', soft: 'อ่อน ๆ', strong: 'เข้ม' });
+const ICON_FX = Object.freeze({ none: 'ไม่มี', shadow: 'เงาไอคอน', glow: 'ไอคอนเรืองแสง' });
+const IMAGE_FITS = Object.freeze({ fill: 'เต็มปุ่ม', icon: 'ขนาดเท่าไอคอน' });
+
+// One-tap looks. `accentBorder`: the border takes the accent colour (neon).
+const PRESETS = Object.freeze({
+    classic: ['คลาสสิก (ค่าเริ่มต้น)', { shape: 'circle', faceStyle: 'flat', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'none', shadow: true, bgOpacity: 85 }],
+    minimal: ['มินิมอล', { shape: 'squircle', faceStyle: 'flat', borderWidth: 0, borderStyle: 'solid', glow: 'none', iconFx: 'none', shadow: false }],
+    glass: ['แก้วใส', { shape: 'circle', faceStyle: 'glass', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'shadow', shadow: true, bgOpacity: 45 }],
+    candy: ['ลูกอมมันวาว', { shape: 'squircle', faceStyle: 'glossy', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'shadow', shadow: true, bgOpacity: 90 }],
+    gradient: ['ไล่เฉดสี', { shape: 'rounded', faceStyle: 'gradient', borderWidth: 0, borderStyle: 'solid', glow: 'soft', iconFx: 'shadow', shadow: true, bgOpacity: 90 }],
+    neon: ['นีออน', { shape: 'circle', faceStyle: 'flat', borderWidth: 2, borderStyle: 'solid', glow: 'strong', iconFx: 'glow', shadow: false, bgOpacity: 80, accentBorder: true }],
+    raised: ['ปุ่มนูน', { shape: 'rounded', faceStyle: 'raised', borderWidth: 0, borderStyle: 'solid', glow: 'none', iconFx: 'shadow', shadow: true, bgOpacity: 100 }],
+    leaf: ['ใบไม้', { shape: 'leaf', faceStyle: 'gradient', borderWidth: 1, borderStyle: 'solid', glow: 'none', iconFx: 'none', shadow: true, bgOpacity: 90 }],
+    stamp: ['แสตมป์', { shape: 'square', faceStyle: 'inset', borderWidth: 2, borderStyle: 'dashed', glow: 'none', iconFx: 'none', shadow: false, bgOpacity: 95 }],
 });
 
 const BUILTINS = Object.freeze({
@@ -156,17 +201,60 @@ function visibleArea() {
     return vv ? { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height } : { x: 0, y: 0, w: vw, h: vh };
 }
 
-/** Font Awesome classes → <i>; anything else (emoji, a letter) → text. */
+/** An uploaded picture (data: URL), a link, or a path on the SillyTavern server. */
+const isImage = v => /^(data:image\/[\w+.-]+;base64,|https?:\/\/|\/[^/])/i.test(String(v ?? '').trim());
+
+/** Picture → <img>; Font Awesome classes → <i>; anything else (emoji, a letter) → text. */
 function iconHTML(icon) {
     const v = String(icon ?? '').trim();
+    if (isImage(v)) return `<img class="qd_img" src="${esc(v)}" alt="" draggable="false" decoding="async">`;
     if (/(^|\s)fa-/.test(v)) return `<i class="${esc(v)}"></i>`;
     return `<span class="qd_emoji">${esc(v || '•')}</span>`;
 }
 
 function cleanIcon(v) {
     v = String(v ?? '').trim();
+    if (isImage(v)) return v.startsWith('data:') ? v.replace(/\s+/g, '') : v.replace(/\s+/g, '%20').slice(0, 2000);
     if (/(^|\s)fa-/.test(v)) return v.replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ');
     return v.slice(0, 8);
+}
+
+/** What the icon text box shows: an uploaded picture's data: URL is long and unreadable, so leave the box empty. */
+function showIconInput(inp, icon) {
+    const uploaded = String(icon ?? '').startsWith('data:');
+    inp.value = uploaded ? '' : icon ?? '';
+    inp.placeholder = uploaded ? 'ใช้รูปที่อัปโหลดอยู่ — พิมพ์หรือแตะไอคอนเพื่อเปลี่ยน' : 'อีโมจิ · fa-solid fa-star · ลิงก์รูป';
+}
+
+/**
+ * A picture for a button, stored in the settings: small files (and GIFs, which would lose their
+ * animation) as they are, anything bigger scaled down — buttons are at most 90px, 2× for sharp screens.
+ */
+async function imageToDataUrl(file) {
+    const read = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+    if (!file.type.startsWith('image/')) throw new Error('ไม่ใช่ไฟล์รูป');
+    if (file.size <= 40_000 || (file.type === 'image/gif' && file.size <= 300_000)) return await read(file);
+    if (file.type === 'image/gif') throw new Error('GIF ใหญ่เกิน 300 KB');
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 180 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bmp.width * k));
+    canvas.height = Math.max(1, Math.round(bmp.height * k));
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close?.();
+    const webp = canvas.toDataURL('image/webp', 0.9);
+    return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
+}
+
+/** Wire an image button + hidden file input; `use` receives the data: URL. */
+function wireImagePicker(btn, input, use) {
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+        const f = input.files?.[0];
+        input.value = '';
+        if (!f) return;
+        try { use(await imageToDataUrl(f)); } catch (err) { toast.warn(`ใช้รูปนี้ไม่ได้: ${err?.message || err}`); }
+    });
 }
 
 const iconGridHTML = () => ICONS.map(ic => `<div class="qd_ic" role="button" tabindex="0" data-icon="${esc(ic)}" title="${esc(ic)}">${iconHTML(ic)}</div>`).join('');
@@ -350,7 +438,9 @@ function buildUI() {
             <input type="text" class="text_pole qd_ed_label" placeholder="ชื่อ" enterkeyhint="done">
             <div class="qd_ed_iconrow">
                 <span class="qd_ed_iconprev"></span>
-                <input type="text" class="text_pole qd_ed_icon" placeholder="อีโมจิ หรือ fa-solid fa-star" enterkeyhint="done">
+                <input type="text" class="text_pole qd_ed_icon" placeholder="อีโมจิ · fa-solid fa-star · ลิงก์รูป" enterkeyhint="done">
+                <div class="menu_button qd_ed_img" title="ใช้รูปภาพจากเครื่อง (PNG พื้นใส หรือ GIF ได้)"><i class="fa-solid fa-image"></i></div>
+                <input type="file" class="qd_ed_file" accept="image/*" hidden>
             </div>
             <div class="qd_icongrid">${iconGridHTML()}</div>
             <div class="qd_ed_btns">
@@ -474,6 +564,14 @@ function applyLook() {
     set('--qd-item', `${itemSize()}px`);
     set('--qd-icon', String(clamp(Number(s.iconScale) || DEFAULTS.iconScale, 25, 75) / 100));
     for (const k of Object.keys(FX)) root.classList.toggle(`qd-fx-${k}`, s.fx === k);
+    set('--qd-radius', (SHAPES[s.shape] ?? SHAPES.circle)[1]);
+    set('--qd-bw', `${clamp(Number.isFinite(Number(s.borderWidth)) ? Math.round(Number(s.borderWidth)) : 1, 0, 4)}px`);
+    set('--qd-bstyle', BORDER_STYLES[s.borderStyle] ? s.borderStyle : 'solid');
+    set('--qd-grad', opaque(colorValue(s.gradColor, 'grad') ?? 'var(--SmartThemeQuoteColor)'));
+    for (const k of Object.keys(FACES)) root.classList.toggle(`qd-face-${k}`, s.faceStyle === k);
+    for (const k of Object.keys(GLOWS)) root.classList.toggle(`qd-glow-${k}`, s.glow === k);
+    for (const k of Object.keys(ICON_FX)) root.classList.toggle(`qd-icon-${k}`, s.iconFx === k);
+    root.classList.toggle('qd-imgfill', s.imageFit !== 'icon');
     root.classList.toggle('qd-blur', !!s.blur);
     root.classList.toggle('qd-noshadow', !s.shadow);
     root.classList.toggle('qd-card-blur', !!s.cardBlur);
@@ -802,7 +900,7 @@ function openEditor(kind, id) {
         : 'ปุ่มว่างหรือกดไม่ได้ใน dock? — ปล่อยปุ่มจริงไว้ที่เดิม (ซ่อนไว้) แล้วแสดงไอคอนที่กดแทนปุ่มนั้นได้';
     ed.querySelector('.qd_ed_title').textContent = kind === 'launcher' ? 'ไอคอนปุ่มหลัก' : kind === 'tray' ? 'ปุ่มลอยใน dock' : item.builtin ? `ช็อตคัท: ${BUILTINS[item.builtin]?.hint ?? ''}` : 'ช็อตคัท';
     ed.querySelector('.qd_ed_label').value = kind === 'launcher' ? '' : item.label ?? '';
-    ed.querySelector('.qd_ed_icon').value = item.icon ?? '';
+    showIconInput(ed.querySelector('.qd_ed_icon'), item.icon);
     ed.querySelector('.qd_ed_iconprev').innerHTML = iconHTML(item.icon);
     const del = ed.querySelector('.qd_ed_del');
     del.innerHTML = kind === 'sc' ? '<i class="fa-solid fa-trash"></i>' : '<i class="fa-solid fa-arrow-up-from-bracket"></i> คืนหน้าจอ';
@@ -839,6 +937,10 @@ function wireEditor() {
     });
     ed.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); }));
     ed.querySelector('.qd_ed_icon').addEventListener('input', e => setIcon(e.target.value));
+    wireImagePicker(ed.querySelector('.qd_ed_img'), ed.querySelector('.qd_ed_file'), url => {
+        setIcon(url);
+        showIconInput(ed.querySelector('.qd_ed_icon'), url);
+    });
     ed.querySelector('.qd_icongrid').addEventListener('click', e => {
         const ic = e.target.closest('[data-icon]')?.dataset.icon;
         if (!ic) return;
@@ -1417,6 +1519,8 @@ function colorRow(id, label, key, which) {
         </div>`;
 }
 
+const options = obj => Object.entries(obj).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+
 function renderSettings() {
     const s = settings();
     const html = `
@@ -1442,7 +1546,9 @@ function renderSettings() {
                 <div class="qd_set_title">ไอคอนปุ่มหลัก</div>
                 <div class="qd_set_iconrow">
                     <span id="qd_icon_prev" class="qd_set_iconprev"></span>
-                    <input type="text" id="qd_icon" class="text_pole" placeholder="อีโมจิ หรือ fa-solid fa-bolt">
+                    <input type="text" id="qd_icon" class="text_pole" placeholder="อีโมจิ · fa-solid fa-bolt · ลิงก์รูป">
+                    <div id="qd_icon_img" class="menu_button qd_inline_btn" title="ใช้รูปภาพจากเครื่อง (PNG พื้นใส หรือ GIF ได้)"><i class="fa-solid fa-image"></i> รูป</div>
+                    <input type="file" id="qd_icon_file" accept="image/*" hidden>
                 </div>
                 <div id="qd_icon_grid" class="qd_icongrid">${iconGridHTML()}</div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_close_sc"> ปิดแผงหลังกดช็อตคัท</label>
@@ -1469,7 +1575,27 @@ function renderSettings() {
                     <label for="qd_idleop">ความทึบปุ่มหลักตอนปิด <output id="qd_idleop_out"></output></label>
                     <input type="range" id="qd_idleop" min="15" max="100" step="5">
                     <label for="qd_fx">เอฟเฟกต์ตอนชี้/กด</label>
-                    <select id="qd_fx" class="text_pole">${Object.entries(FX).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
+                    <select id="qd_fx" class="text_pole">${options(FX)}</select>
+                </div>
+                <div class="qd_set_title">ตกแต่งปุ่ม (ปุ่มหลัก + ช็อตคัทในวงโค้ง)</div>
+                <div class="qd_set_grid">
+                    <label for="qd_preset">ชุดสำเร็จรูป</label>
+                    <select id="qd_preset" class="text_pole"><option value="">— เลือกเพื่อใช้ —</option>${Object.entries(PRESETS).map(([k, [name]]) => `<option value="${k}">${esc(name)}</option>`).join('')}</select>
+                    <label for="qd_shape">รูปทรง</label>
+                    <select id="qd_shape" class="text_pole">${Object.entries(SHAPES).map(([k, [name]]) => `<option value="${k}">${esc(name)}</option>`).join('')}</select>
+                    <label for="qd_face">ลายพื้นปุ่ม</label>
+                    <select id="qd_face" class="text_pole">${options(FACES)}</select>
+                    ${colorRow('qd_c_grad', 'สีไล่เฉด (ลายไล่เฉดสี)', 'gradColor', 'grad')}
+                    <label for="qd_bw">ความหนาขอบ <output id="qd_bw_out"></output></label>
+                    <input type="range" id="qd_bw" min="0" max="4" step="1">
+                    <label for="qd_bstyle">ลายเส้นขอบ</label>
+                    <select id="qd_bstyle" class="text_pole">${options(BORDER_STYLES)}</select>
+                    <label for="qd_glow">เรืองแสงรอบปุ่ม (สีเน้น)</label>
+                    <select id="qd_glow" class="text_pole">${options(GLOWS)}</select>
+                    <label for="qd_iconfx">เอฟเฟกต์ไอคอน</label>
+                    <select id="qd_iconfx" class="text_pole">${options(ICON_FX)}</select>
+                    <label for="qd_imgfit">ไอคอนที่เป็นรูปภาพ</label>
+                    <select id="qd_imgfit" class="text_pole">${options(IMAGE_FITS)}</select>
                 </div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_shadow"> เงาใต้ปุ่ม</label>
                 <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_blur"> เบลอพื้นหลังใต้ปุ่ม (กิน GPU)</label>
@@ -1531,19 +1657,23 @@ function renderSettings() {
     };
     bindSelect('qd_labelmode', 'labelMode');
     bindSelect('qd_fx', 'fx');
+    bindSelect('qd_shape', 'shape');
+    bindSelect('qd_face', 'faceStyle');
+    bindSelect('qd_bstyle', 'borderStyle');
+    bindSelect('qd_glow', 'glow');
+    bindSelect('qd_iconfx', 'iconFx');
+    bindSelect('qd_imgfit', 'imageFit');
     bindNum('qd_itemsize', 'itemSize', 30, 80);
     bindNum('qd_iconscale', 'iconScale', 25, 75);
-    const bindRange = (id, key) => {
+    const bindRange = (id, key, unit = '%') => {
         const out = $(`${id}_out`);
-        const show = () => { $(id).value = s[key]; out.textContent = `${s[key]}%`; };
+        const show = () => { $(id).value = s[key]; out.textContent = `${s[key]}${unit}`; };
         show();
-        $(id).addEventListener('input', e => { s[key] = Number(e.target.value); out.textContent = `${s[key]}%`; save(); applyLook(); });
+        $(id).addEventListener('input', e => { s[key] = Number(e.target.value); out.textContent = `${s[key]}${unit}`; save(); applyLook(); });
         return show;
     };
-    const showBg = bindRange('qd_bgop', 'bgOpacity');
-    const showIdle = bindRange('qd_idleop', 'idleOpacity');
-    const showCardOp = bindRange('qd_cardop', 'cardBgOpacity');
-    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent'],
+    const showRanges = [bindRange('qd_bgop', 'bgOpacity'), bindRange('qd_idleop', 'idleOpacity'), bindRange('qd_cardop', 'cardBgOpacity'), bindRange('qd_bw', 'borderWidth', 'px')];
+    const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent'], ['qd_c_grad', 'gradColor', 'grad'],
         ['qd_c_cardtext', 'cardTextColor', 'cardText'], ['qd_c_cardbg', 'cardBgColor', 'cardBg'], ['qd_c_cardborder', 'cardBorderColor', 'cardBorder']];
     const showColors = () => colorInputs.forEach(([id, key, which]) => {
         $(id).value = s[key];
@@ -1556,18 +1686,35 @@ function renderSettings() {
     }
     showColors();
     $('qd_preview').addEventListener('click', () => openPanel());
+    const syncLook = () => {
+        for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale'],
+            ['qd_shape', 'shape'], ['qd_face', 'faceStyle'], ['qd_bstyle', 'borderStyle'], ['qd_glow', 'glow'], ['qd_iconfx', 'iconFx'], ['qd_imgfit', 'imageFit']]) $(id).value = s[key];
+        for (const [id, key] of [['qd_shadow', 'shadow'], ['qd_blur', 'blur'], ['qd_cardshadow', 'cardShadow'], ['qd_cardblur', 'cardBlur']]) $(id).checked = !!s[key];
+        showRanges.forEach(show => show());
+        showColors();
+        restyle();
+    };
+    $('qd_preset').addEventListener('change', e => {
+        const [, look] = PRESETS[e.target.value] ?? [];
+        e.target.value = '';
+        if (!look) return;
+        const { accentBorder, ...rest } = look;
+        Object.assign(s, rest);
+        if (accentBorder) {
+            s.borderColor = s.accentColor;
+            if (s.accentColor === 'custom') s.customColors.border = s.customColors.accent;
+        }
+        save();
+        syncLook();
+        if (!isOpen()) openPanel();
+    });
     $('qd_look_reset').addEventListener('click', () => {
         for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx',
+            'shape', 'faceStyle', 'gradColor', 'borderWidth', 'borderStyle', 'glow', 'iconFx', 'imageFit',
             'cardTextColor', 'cardBgColor', 'cardBorderColor', 'cardBgOpacity', 'cardBlur', 'cardShadow']) s[k] = DEFAULTS[k];
         s.customColors = { ...DEFAULTS.customColors };
         save();
-        for (const [id, key] of [['qd_labelmode', 'labelMode'], ['qd_fx', 'fx'], ['qd_itemsize', 'itemSize'], ['qd_iconscale', 'iconScale']]) $(id).value = s[key];
-        $('qd_shadow').checked = s.shadow;
-        $('qd_blur').checked = s.blur;
-        $('qd_cardshadow').checked = s.cardShadow;
-        $('qd_cardblur').checked = s.cardBlur;
-        showBg(); showIdle(); showCardOp(); showColors();
-        restyle();
+        syncLook();
     });
     bindCheck('qd_close_sc', 'closeOnShortcut');
     bindCheck('qd_close_tray', 'closeOnTray');
@@ -1584,6 +1731,7 @@ function renderSettings() {
         syncSettingsIcon();
     };
     $('qd_icon').addEventListener('change', e => setLauncherIcon(e.target.value));
+    wireImagePicker($('qd_icon_img'), $('qd_icon_file'), setLauncherIcon);
     $('qd_icon_grid').addEventListener('click', e => {
         const ic = e.target.closest('[data-icon]')?.dataset.icon;
         if (ic) setLauncherIcon(ic);
@@ -1602,7 +1750,7 @@ function syncSettingsIcon() {
     const prev = document.getElementById('qd_icon_prev');
     const inp = document.getElementById('qd_icon');
     if (prev) prev.innerHTML = iconHTML(s.icon);
-    if (inp) inp.value = s.icon;
+    if (inp) showIconInput(inp, s.icon);
 }
 
 function renderScan() {

@@ -17,9 +17,9 @@
     font-size: calc(var(--qd-size) * var(--qd-icon, 0.42));
     color: var(--qd-fg, #ddd);
     background: color-mix(in srgb, var(--qd-bg, #1e1e28) var(--qd-bg-op, 85%), transparent);
-    border: 1px solid var(--qd-border, #555);
-    border-radius: 50%;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    border: var(--qd-bw, 1px) var(--qd-bstyle, solid) var(--qd-border, #555);
+    border-radius: var(--qd-radius, 50%);
+    box-shadow: var(--qd-face-sh);
     opacity: var(--qd-idle-op, 1);
     cursor: pointer;
     user-select: none;
@@ -138,12 +138,12 @@
     width: var(--qd-item, 46px);
     height: var(--qd-item, 46px);
     box-sizing: border-box;
-    border-radius: 50%;
+    border-radius: var(--qd-radius, 50%);
     font-size: calc(var(--qd-item, 46px) * var(--qd-icon, 0.42));
     color: var(--qd-fg, #ddd);
     background: color-mix(in srgb, var(--qd-bg, #1e1e28) var(--qd-bg-op, 85%), transparent);
-    border: 1px solid var(--qd-border, #555);
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+    border: var(--qd-bw, 1px) var(--qd-bstyle, solid) var(--qd-border, #555);
+    box-shadow: var(--qd-face-sh);
 }
 #qd_arc .qd_arc_item span {
     flex-shrink: 0;
@@ -162,7 +162,7 @@
 #qd_arc.qd_nolabels .qd_arc_item span { display: none; }
 #qd_arc .qd_arc_item.qd_lbl_end { align-items: flex-end; }
 #qd_arc .qd_arc_item.qd_lbl_start { align-items: flex-start; }
-#qd_arc.qd_editing .qd_btnface { border-style: dashed; }
+#qd_arc.qd_editing .qd_btnface { border-style: dashed; border-width: max(1px, var(--qd-bw, 1px)); }
 #qd_arc .qd_arc_item.qd_sel .qd_btnface { border: 2px solid var(--qd-accent, #e18a24); }
 
 /* ---------------------------------------------------------------- tray: other extensions' floating buttons */
@@ -235,6 +235,7 @@
 #qd_panel .qd_editor input { margin: 0; width: 100%; box-sizing: border-box; font-size: 16px; }
 #qd_panel .qd_ed_iconrow { display: flex; align-items: center; gap: 6px; }
 #qd_panel .qd_ed_iconprev { width: 26px; font-size: 20px; text-align: center; flex-shrink: 0; }
+#qd_panel .qd_ed_iconrow .menu_button { width: auto; margin: 0; padding: 6px 10px; flex-shrink: 0; }
 #qd_panel .qd_ed_btns { display: flex; flex-wrap: wrap; gap: 4px; }
 #qd_panel .qd_ed_btns .menu_button { width: auto; margin: 0; padding: 6px 10px; white-space: nowrap; }
 #qd_panel .qd_editor[data-kind="tray"]:not(.qd_proxyed) .qd_ed_iconrow,
@@ -381,9 +382,58 @@ html.qd-card-blur #qd_panel {
     -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
 }
-html.qd-noshadow #qd_launcher,
-html.qd-noshadow #qd_arc .qd_btnface,
 html.qd-card-noshadow #qd_panel { box-shadow: none; }
+
+/* ---------------------------------------------------------------- button decoration (launcher + arc faces)
+ * The face shadow is three layers so glow, face style and drop shadow can be mixed freely. */
+:root {
+    --qd-glow-sh: 0 0 0 transparent;
+    --qd-inset-sh: 0 0 0 transparent;
+    --qd-drop-sh: 0 3px 12px rgba(0, 0, 0, 0.35);
+}
+#qd_launcher, #qd_arc .qd_btnface { --qd-face-sh: var(--qd-glow-sh), var(--qd-inset-sh), var(--qd-drop-sh); }
+html.qd-noshadow { --qd-drop-sh: 0 0 0 transparent; }
+html.qd-glow-soft { --qd-glow-sh: 0 0 8px 1px color-mix(in srgb, var(--qd-accent, #e18a24) 55%, transparent); }
+html.qd-glow-strong { --qd-glow-sh: 0 0 12px 3px color-mix(in srgb, var(--qd-accent, #e18a24) 85%, transparent); }
+
+html.qd-face-gradient #qd_launcher,
+html.qd-face-gradient #qd_arc .qd_btnface {
+    background-image: linear-gradient(145deg, color-mix(in srgb, var(--qd-grad, #7a5cff) var(--qd-bg-op, 85%), transparent) 10%, transparent 90%);
+}
+html.qd-face-glossy #qd_launcher,
+html.qd-face-glossy #qd_arc .qd_btnface {
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.08) 48%, rgba(0, 0, 0, 0.12) 52%, rgba(0, 0, 0, 0.02));
+}
+html.qd-face-glass #qd_launcher,
+html.qd-face-glass #qd_arc .qd_btnface {
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.04) 60%);
+}
+html.qd-face-glass { --qd-inset-sh: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -1px 1px rgba(0, 0, 0, 0.15); }
+html.qd-face-raised #qd_launcher,
+html.qd-face-raised #qd_arc .qd_btnface {
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.14));
+}
+html.qd-face-raised { --qd-inset-sh: inset 0 2px 1px rgba(255, 255, 255, 0.22), inset 0 -3px 2px rgba(0, 0, 0, 0.3); }
+html.qd-face-inset #qd_launcher,
+html.qd-face-inset #qd_arc .qd_btnface {
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.06));
+}
+html.qd-face-inset { --qd-inset-sh: inset 0 3px 6px rgba(0, 0, 0, 0.4); }
+
+/* picture icons: sized like an icon, or ('fill') covering the whole button in its shape */
+.qd_img { display: block; width: 1.25em; height: 1.25em; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+html.qd-imgfill #qd_launcher > .qd_img,
+html.qd-imgfill #qd_arc .qd_btnface > .qd_img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+html.qd-imgfill #qd_panel .qd_sc .qd_btnface > .qd_img { width: auto; height: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--qd-radius, 50%); }
+.qd_set_iconprev .qd_img, .qd_ed_iconprev .qd_img { margin: 0 auto; }
+html.qd-icon-shadow .qd_img { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+html.qd-icon-glow .qd_img { filter: drop-shadow(0 0 4px var(--qd-accent, #e18a24)); }
+
+/* icon effects — also on the grid's faces */
+html.qd-icon-shadow #qd_launcher,
+html.qd-icon-shadow .qd_btnface { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+html.qd-icon-glow #qd_launcher,
+html.qd-icon-glow .qd_btnface { text-shadow: 0 0 6px var(--qd-accent, #e18a24), 0 0 2px var(--qd-accent, #e18a24); }
 
 /* ---------------------------------------------------------------- hover / press effects
  * Cheap on purpose: colour, outline or a transform on the inner face only (never on
