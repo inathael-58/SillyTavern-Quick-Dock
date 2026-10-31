@@ -420,11 +420,42 @@ html.qd-face-inset #qd_arc .qd_btnface {
 }
 html.qd-face-inset { --qd-inset-sh: inset 0 3px 6px rgba(0, 0, 0, 0.4); }
 
-/* picture icons: sized like an icon, or ('fill') covering the whole button in its shape */
-.qd_img { display: block; width: 1.25em; height: 1.25em; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+/* picture icons (--qd-img-k scales them): sized like an icon · 'fill' covering the button in its shape
+ * (smaller leaves a frame of the button, bigger zooms in) · 'bare' the picture alone, no button behind it */
+.qd_img { display: block; flex-shrink: 0; width: calc(1.25em * var(--qd-img-k, 1)); height: calc(1.25em * var(--qd-img-k, 1)); object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
 html.qd-imgfill #qd_launcher > .qd_img,
-html.qd-imgfill #qd_arc .qd_btnface > .qd_img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-html.qd-imgfill #qd_panel .qd_sc .qd_btnface > .qd_img { width: auto; height: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--qd-radius, 50%); }
+html.qd-imgfill #qd_arc .qd_btnface > .qd_img { width: calc(100% * var(--qd-img-k, 1)); height: calc(100% * var(--qd-img-k, 1)); object-fit: cover; border-radius: inherit; }
+html.qd-imgfill:not(.qd-imgbare) #qd_launcher:has(> .qd_img),
+html.qd-imgfill:not(.qd-imgbare) #qd_arc .qd_btnface:has(> .qd_img) { overflow: hidden; }
+html.qd-imgfill #qd_panel .qd_sc .qd_btnface:has(> .qd_img) { height: auto; }
+html.qd-imgfill #qd_panel .qd_sc .qd_btnface > .qd_img {
+    --qd-img-h: min(56px, calc((var(--qd-item, 46px) * var(--qd-icon, 0.42) + 2px) * var(--qd-img-k, 1)));
+    width: var(--qd-img-h); height: var(--qd-img-h); object-fit: cover; border-radius: var(--qd-radius, 50%);
+}
+/* bare: drop the face's background, border and shadows through its own variables, so the
+ * edit-mode dashes, the selection border and hover/press feedback still show */
+html.qd-imgbare #qd_launcher:has(> .qd_img),
+html.qd-imgbare #qd_arc .qd_btnface:has(> .qd_img) {
+    --qd-bg-op: 0%;
+    --qd-border: transparent;
+    --qd-bw: 0px;
+    --qd-face-sh: none;
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+html.qd-imgbare #qd_launcher.qd_active:has(> .qd_img) { border-color: transparent; }
+html.qd-imgbare #qd_launcher > .qd_img,
+html.qd-imgbare #qd_arc .qd_btnface > .qd_img,
+html.qd-imgbare #qd_panel .qd_sc .qd_btnface > .qd_img { object-fit: contain; border-radius: 0; }
+/* with no face to carry them, the drop shadow and the glow follow the picture's own outline */
+html.qd-imgbare.qd-icon-none:not(.qd-noshadow) #qd_launcher > .qd_img,
+html.qd-imgbare.qd-icon-none:not(.qd-noshadow) #qd_arc .qd_btnface > .qd_img { filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45)); }
+html.qd-imgbare.qd-icon-none.qd-glow-soft #qd_launcher > .qd_img,
+html.qd-imgbare.qd-icon-none.qd-glow-soft #qd_arc .qd_btnface > .qd_img { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--qd-accent, #e18a24) 70%, transparent)); }
+html.qd-imgbare.qd-icon-none.qd-glow-strong #qd_launcher > .qd_img,
+html.qd-imgbare.qd-icon-none.qd-glow-strong #qd_arc .qd_btnface > .qd_img { filter: drop-shadow(0 0 6px var(--qd-accent, #e18a24)) drop-shadow(0 0 2px var(--qd-accent, #e18a24)); }
+html.qd-imgbare #qd_launcher.qd_active > .qd_img { filter: drop-shadow(0 0 5px var(--qd-accent, #e18a24)); }
 .qd_set_iconprev .qd_img, .qd_ed_iconprev .qd_img { margin: 0 auto; }
 html.qd-icon-shadow .qd_img { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
 html.qd-icon-glow .qd_img { filter: drop-shadow(0 0 4px var(--qd-accent, #e18a24)); }

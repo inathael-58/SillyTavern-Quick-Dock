@@ -50,7 +50,8 @@ const DEFAULTS = Object.freeze({
     borderStyle: 'solid',            // see BORDER_STYLES
     glow: 'none',                    // see GLOWS — a still glow in the accent colour
     iconFx: 'none',                  // see ICON_FX
-    imageFit: 'fill',                // picture icons: 'fill' the whole button | 'icon' sized like an icon
+    imageFit: 'fill',                // picture icons, see IMAGE_FITS
+    imageScale: 100,                 // % — picture icons, 50–200
     cardTextColor: 'body',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
     cardBgColor: 'tint',
     cardBorderColor: 'border',
@@ -114,7 +115,8 @@ const FACES = Object.freeze({
 const BORDER_STYLES = Object.freeze({ solid: 'เส้นทึบ', dashed: 'เส้นประ', dotted: 'จุดไข่ปลา', double: 'เส้นคู่' });
 const GLOWS = Object.freeze({ none: 'ไม่มี', soft: 'อ่อน ๆ', strong: 'เข้ม' });
 const ICON_FX = Object.freeze({ none: 'ไม่มี', shadow: 'เงาไอคอน', glow: 'ไอคอนเรืองแสง' });
-const IMAGE_FITS = Object.freeze({ fill: 'เต็มปุ่ม', icon: 'ขนาดเท่าไอคอน' });
+// 'fill': the picture covers the button, cut to its shape · 'bare': the picture is the button — no background, border or shadow · 'icon': sized like an icon
+const IMAGE_FITS = Object.freeze({ fill: 'เต็มปุ่ม (ตามรูปทรงปุ่ม)', bare: 'แทนปุ่ม (ไม่มีพื้นปุ่ม)', icon: 'ขนาดเท่าไอคอน' });
 
 // One-tap looks. `accentBorder`: the border takes the accent colour (neon).
 const PRESETS = Object.freeze({
@@ -571,7 +573,10 @@ function applyLook() {
     for (const k of Object.keys(FACES)) root.classList.toggle(`qd-face-${k}`, s.faceStyle === k);
     for (const k of Object.keys(GLOWS)) root.classList.toggle(`qd-glow-${k}`, s.glow === k);
     for (const k of Object.keys(ICON_FX)) root.classList.toggle(`qd-icon-${k}`, s.iconFx === k);
-    root.classList.toggle('qd-imgfill', s.imageFit !== 'icon');
+    const fit = IMAGE_FITS[s.imageFit] ? s.imageFit : 'fill';
+    root.classList.toggle('qd-imgfill', fit !== 'icon');
+    root.classList.toggle('qd-imgbare', fit === 'bare');
+    set('--qd-img-k', String(clamp(Number(s.imageScale) || 100, 50, 200) / 100));
     root.classList.toggle('qd-blur', !!s.blur);
     root.classList.toggle('qd-noshadow', !s.shadow);
     root.classList.toggle('qd-card-blur', !!s.cardBlur);
@@ -1596,6 +1601,8 @@ function renderSettings() {
                     <select id="qd_iconfx" class="text_pole">${options(ICON_FX)}</select>
                     <label for="qd_imgfit">ไอคอนที่เป็นรูปภาพ</label>
                     <select id="qd_imgfit" class="text_pole">${options(IMAGE_FITS)}</select>
+                    <label for="qd_imgscale">ขนาดรูปภาพ <output id="qd_imgscale_out"></output></label>
+                    <input type="range" id="qd_imgscale" min="50" max="200" step="5">
                 </div>
                 <label class="checkbox_label"><input type="checkbox" id="qd_shadow"> เงาใต้ปุ่ม</label>
                 <label class="checkbox_label" title="สวยขึ้นแต่กิน GPU โดยเฉพาะบนมือถือ"><input type="checkbox" id="qd_blur"> เบลอพื้นหลังใต้ปุ่ม (กิน GPU)</label>
@@ -1672,7 +1679,7 @@ function renderSettings() {
         $(id).addEventListener('input', e => { s[key] = Number(e.target.value); out.textContent = `${s[key]}${unit}`; save(); applyLook(); });
         return show;
     };
-    const showRanges = [bindRange('qd_bgop', 'bgOpacity'), bindRange('qd_idleop', 'idleOpacity'), bindRange('qd_cardop', 'cardBgOpacity'), bindRange('qd_bw', 'borderWidth', 'px')];
+    const showRanges = [bindRange('qd_bgop', 'bgOpacity'), bindRange('qd_idleop', 'idleOpacity'), bindRange('qd_cardop', 'cardBgOpacity'), bindRange('qd_bw', 'borderWidth', 'px'), bindRange('qd_imgscale', 'imageScale')];
     const colorInputs = [['qd_c_icon', 'iconColor', 'icon'], ['qd_c_bg', 'bgColor', 'bg'], ['qd_c_border', 'borderColor', 'border'], ['qd_c_accent', 'accentColor', 'accent'], ['qd_c_grad', 'gradColor', 'grad'],
         ['qd_c_cardtext', 'cardTextColor', 'cardText'], ['qd_c_cardbg', 'cardBgColor', 'cardBg'], ['qd_c_cardborder', 'cardBorderColor', 'cardBorder']];
     const showColors = () => colorInputs.forEach(([id, key, which]) => {
@@ -1710,7 +1717,7 @@ function renderSettings() {
     });
     $('qd_look_reset').addEventListener('click', () => {
         for (const k of ['labelMode', 'itemSize', 'iconScale', 'iconColor', 'bgColor', 'borderColor', 'accentColor', 'bgOpacity', 'idleOpacity', 'blur', 'shadow', 'fx',
-            'shape', 'faceStyle', 'gradColor', 'borderWidth', 'borderStyle', 'glow', 'iconFx', 'imageFit',
+            'shape', 'faceStyle', 'gradColor', 'borderWidth', 'borderStyle', 'glow', 'iconFx', 'imageFit', 'imageScale',
             'cardTextColor', 'cardBgColor', 'cardBorderColor', 'cardBgOpacity', 'cardBlur', 'cardShadow']) s[k] = DEFAULTS[k];
         s.customColors = { ...DEFAULTS.customColors };
         save();
