@@ -355,6 +355,9 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 .qd_settings .qd_set_grid input { margin: 0; }
 .qd_settings .qd_set_btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 4px; }
 .qd_settings .qd_set_btns .menu_button { width: auto; padding: 4px 10px; }
+.qd_settings .qd_diagbox { margin: 6px 0; }
+.qd_settings .qd_diagbox textarea { width: 100%; font: 11px/1.35 ui-monospace, Menlo, monospace; white-space: pre; }
+.qd_settings .qd_diagbox .menu_button { width: fit-content; display: inline-flex; gap: 6px; align-items: center; }
 .qd_settings .qd_set_title { margin-top: 8px; font-weight: 600; opacity: 0.85; }
 .qd_settings .qd_set_list { display: flex; flex-direction: column; gap: 2px; }
 .qd_settings .qd_set_row { display: flex; align-items: center; gap: 6px; padding: 2px 0; min-width: 0; }
