@@ -13,7 +13,7 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.5.0'; // keep in sync with manifest.json
+const VERSION = '1.5.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -635,6 +635,20 @@ function snapLauncher() {
     save();
 }
 
+/* The launcher acts on pointerup (pick mode eats clicks, so it can't wait for click). The browser still
+ * fires a click for that same tap a moment later, at the same spot. If the card or arc opened under the
+ * finger, that click would press whatever shortcut is there, so swallow it. */
+let ghostUntil = 0;
+const armGhostGuard = () => { ghostUntil = performance.now() + 500; };
+document.addEventListener('click', e => {
+    if (performance.now() > ghostUntil) return;
+    if (!(panel?.contains(e.target) || arc?.contains(e.target))) return;
+    ghostUntil = 0;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    diag(`swallowed the click that followed the opening tap (${elName(e.target)})`);
+}, true);
+
 function makeDraggable(el, { onTap, onLong }) {
     let start = null;
     let dragged = false;
@@ -666,8 +680,8 @@ function makeDraggable(el, { onTap, onLong }) {
         clearTimeout(longTimer);
         try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
         start = null;
-        if (longFired) return;
-        if (!dragged) { if (e.type === 'pointerup') onTap(); return; }
+        if (longFired) { armGhostGuard(); return; }
+        if (!dragged) { if (e.type === 'pointerup') { armGhostGuard(); onTap(); } return; }
         el.classList.remove('qd_dragging');
         if (e.type === 'pointerup') snapLauncher();
         placeLauncher();
@@ -677,6 +691,91 @@ function makeDraggable(el, { onTap, onLong }) {
     el.addEventListener('contextmenu', e => e.preventDefault());
 }
 
+// ---------------------------------------------------------------- diagnostics (phones have no console)
+
+let openedAt = 0;
+const diagLog = [];
+function diag(msg) {
+    diagLog.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+    if (diagLog.length > 30) diagLog.shift();
+}
+
+/** Show an error on screen as well as in the console. */
+function reportError(where, err) {
+    console.error(LOG, where, err);
+    diag(`ERROR ${where}: ${err?.stack || err}`);
+    try { globalThis.toastr?.error(`${where}: ${err?.message ?? err}`, 'Quick Dock', { timeOut: 15000, extendedTimeOut: 15000 }); } catch { /* ignore */ }
+}
+
+window.addEventListener('error', e => {
+    if (String(e.filename || '').startsWith(BASE_URL.href)) diag(`window error ${e.message} @${String(e.filename).slice(BASE_URL.href.length)}:${e.lineno}`);
+});
+window.addEventListener('unhandledrejection', e => {
+    if (String(e.reason?.stack || '').includes(BASE_URL.href)) diag(`unhandled ${e.reason?.message ?? e.reason}`);
+});
+
+function elName(el) {
+    if (!el) return 'null';
+    const cls = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '';
+    return `${el.tagName?.toLowerCase()}${el.id ? '#' + el.id : ''}${cls}`;
+}
+
+/** Ancestors whose style makes position:fixed follow them instead of the screen, or that hide everything. */
+function fixedBreakers(el) {
+    const out = [];
+    for (let n = el?.parentElement; n; n = n.parentElement) {
+        const cs = getComputedStyle(n);
+        const bad = ['transform', 'perspective', 'filter', 'backdropFilter', 'contain', 'willChange']
+            .filter(k => cs[k] && !['none', 'normal', 'auto', ''].includes(cs[k]))
+            .map(k => `${k}:${cs[k]}`);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') bad.push(`display:${cs.display} visibility:${cs.visibility} opacity:${cs.opacity}`);
+        if (bad.length) out.push(`${elName(n)} {${bad.join('; ')}}`);
+    }
+    return out;
+}
+
+const rectText = el => { const r = el.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`; };
+
+/** Open the dock, measure what is really on screen, close it again, and return a report. */
+async function runDiagnostics() {
+    const lines = [];
+    const add = (k, v) => lines.push(`${k}: ${v}`);
+    let remote = '?';
+    try { remote = String((await (await fetch(new URL('manifest.json', BASE_URL), { cache: 'no-store' })).json())?.version ?? '?'); } catch { /* offline */ }
+    add('version', `v${VERSION} (server ${remote})`);
+    add('ua', navigator.userAgent);
+    const vv = window.visualViewport;
+    add('viewport', `${innerWidth}x${innerHeight} · vv ${vv ? `${Math.round(vv.width)}x${Math.round(vv.height)} @${Math.round(vv.offsetLeft)},${Math.round(vv.offsetTop)} scale ${vv.scale}` : '-'} · dpr ${devicePixelRatio}`);
+    const s = settings();
+    add('settings', `enabled=${s.enabled} layout=${s.layout} shortcuts=${s.shortcuts?.length} tray=${s.tray?.length ?? '-'} pos=${JSON.stringify(s.pos)}`);
+    add('html class', document.documentElement.className);
+
+    const before = diagLog.length;
+    const wasOpen = isOpen();
+    if (!wasOpen) openPanel();
+    await new Promise(r => setTimeout(r, 700));
+    for (const [name, el] of [['launcher', launcher], ['card', panel], ['arc', arc]]) {
+        if (!el) { add(name, 'ไม่มี'); continue; }
+        const cs = getComputedStyle(el);
+        add(name, `inDOM=${document.body.contains(el)} ${rectText(el)} display:${cs.display} visibility:${cs.visibility} opacity:${cs.opacity} position:${cs.position} z:${cs.zIndex} class="${el.className}"`);
+    }
+    const items = arc ? [...arc.querySelectorAll('.qd_arc_item')] : [];
+    if (items.length) add('arc items', items.map(rectText).join(' · '));
+    const probe = el => {
+        if (!el) return '-';
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return el.contains(hit) ? 'เห็น' : `ถูกบังโดย ${elName(hit)}`;
+    };
+    add('กลางปุ่ม/การ์ด', `launcher ${probe(launcher)} · card ${probe(panel)}${items[0] ? ` · arc[0] ${probe(items[0])}` : ''}`);
+    const br = fixedBreakers(panel);
+    add('ตัวบัง fixed', br.length ? br.join(' | ') : 'ไม่มี');
+    add('log', '');
+    lines.push(...diagLog.slice(Math.max(0, before - 8)).map(x => '  ' + x));
+    if (!wasOpen) closePanel();
+    return lines.join('\n');
+}
+
 // ---------------------------------------------------------------- open / close / render
 
 function togglePanel() {
@@ -684,16 +783,24 @@ function togglePanel() {
 }
 
 function openPanel() {
-    if (!settings().enabled) return;
-    applyLook();
+    diag('open');
+    if (!settings().enabled) { diag('open skipped: Quick Dock is disabled'); return; }
+    openedAt = Date.now();
+    // Visible first, then filled: a drawing error still leaves the card up and says why.
     panel.classList.add('qd_open');
     arc.classList.add('qd_open');
     launcher.classList.add('qd_active');
-    renderPanel();
+    try {
+        applyLook();
+        renderPanel();
+    } catch (err) {
+        reportError('วาด Quick Dock ไม่ได้', err);
+    }
 }
 
 function closePanel() {
     if (!panel) return;
+    if (isOpen()) diag(`close ${Date.now() - openedAt}ms หลังเปิด · ${(new Error().stack || '').split('\n').slice(1, 4).map(x => x.trim()).join(' < ')}`);
     if (panel.contains(document.activeElement)) document.activeElement.blur();
     panel.classList.remove('qd_open');
     arc.classList.remove('qd_open');
@@ -1622,6 +1729,11 @@ function renderSettings() {
                     <div id="qd_add_tray" class="menu_button"><i class="fa-solid fa-inbox"></i> เก็บปุ่มลอย</div>
                     <div id="qd_scan" class="menu_button" title="หาปุ่มลอยบนหน้าจอให้อัตโนมัติ"><i class="fa-solid fa-magnifying-glass"></i> ค้นหาปุ่มลอย</div>
                     <div id="qd_reset_pos" class="menu_button" title="ย้ายปุ่มหลักไปมุมขวาล่าง"><i class="fa-solid fa-crosshairs"></i> รีเซ็ตตำแหน่ง</div>
+                    <div id="qd_diag" class="menu_button" title="ทดลองเปิด Quick Dock แล้ววัดว่าเกิดอะไรขึ้น ได้รายงานไว้คัดลอกส่งให้คนแก้"><i class="fa-solid fa-stethoscope"></i> ตรวจปัญหา</div>
+                </div>
+                <div id="qd_diagbox" class="qd_diagbox" hidden>
+                    <textarea class="text_pole" readonly rows="10"></textarea>
+                    <div id="qd_diagcopy" class="menu_button"><i class="fa-solid fa-copy"></i> คัดลอกรายงาน</div>
                 </div>
                 <div id="qd_scan_result" class="qd_set_list"></div>
                 <div class="qd_set_title">ช็อตคัท</div>
@@ -1749,6 +1861,17 @@ function renderSettings() {
     $('qd_add_tray').addEventListener('click', () => startPick('tray'));
     $('qd_reset_pos').addEventListener('click', () => { s.pos = { ...DEFAULTS.pos }; save(); placeLauncher(); });
     $('qd_scan').addEventListener('click', renderScan);
+    $('qd_diag').addEventListener('click', async () => {
+        let text;
+        try { text = await runDiagnostics(); } catch (err) { text = `ตรวจไม่สำเร็จ: ${err?.stack || err}\n${diagLog.join('\n')}`; }
+        $('qd_diagbox').hidden = false;
+        $('qd_diagbox').querySelector('textarea').value = text;
+    });
+    $('qd_diagcopy').addEventListener('click', async () => {
+        const ta = $('qd_diagbox').querySelector('textarea');
+        try { await navigator.clipboard.writeText(ta.value); globalThis.toastr?.success('คัดลอกรายงานแล้ว', '', { timeOut: 1500 }); }
+        catch { ta.focus(); ta.select(); globalThis.toastr?.info('เลือกข้อความไว้แล้ว กดคัดลอกเองได้เลย'); }
+    });
     renderSettingsLists();
 }
 
@@ -1862,6 +1985,18 @@ async function reloadWithFreshFiles() {
     }
 }
 
+function registerDebugCommand() {
+    try {
+        const c = ctx();
+        if (!c.SlashCommandParser?.addCommandObject || !c.SlashCommand?.fromProps) return;
+        c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({
+            name: 'qd-debug',
+            callback: async () => runDiagnostics(),
+            helpString: 'ตรวจปัญหา Quick Dock แล้วคืนรายงาน (ดูหรือคัดลอกได้จาก Extensions → Quick Dock → ตรวจปัญหา)',
+        }));
+    } catch (err) { console.warn(LOG, 'slash command', err); }
+}
+
 // ---------------------------------------------------------------- init
 
 function init() {
@@ -1872,6 +2007,7 @@ function init() {
     renderSettings();
     renderPanel();
     syncTray();
+    registerDebugCommand();
     domObserver.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS Safari apply :active (press effects)
     const { eventSource, event_types: E } = ctx();
