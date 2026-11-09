@@ -7,7 +7,9 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 3050;
+    /* Near the top of the z-index range so other extensions' full-screen panels
+     * (10000–10050, and up to 2147483000) never cover the dock. */
+    z-index: 2147483640;
     width: var(--qd-size);
     height: var(--qd-size);
     box-sizing: border-box;
@@ -60,7 +62,7 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 3051;
+    z-index: 2147483641;
     display: none;
     flex-direction: column;
     gap: 6px;
@@ -122,7 +124,7 @@
 #qd_arc.qd_hide { display: none; }
 #qd_arc .qd_arc_item {
     position: fixed;
-    z-index: 3052;
+    z-index: 2147483642;
     width: var(--qd-item, 46px);
     display: flex;
     flex-direction: column;
@@ -312,7 +314,7 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
     right: 8px;
     margin: 0 auto;
     max-width: 460px;
-    z-index: 10060;
+    z-index: 2147483645;
     display: none;
     align-items: center;
     gap: 8px;
@@ -337,7 +339,7 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 
 #qd_hl {
     position: fixed;
-    z-index: 10055;
+    z-index: 2147483644;
     display: none;
     pointer-events: none;
     border: 2px solid var(--SmartThemeQuoteColor, #e18a24);
