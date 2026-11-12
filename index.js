@@ -13,7 +13,7 @@
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.5.2'; // keep in sync with manifest.json
+const VERSION = '1.5.3'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -465,14 +465,35 @@ function buildUI() {
         const item = e.target.closest('.qd_sc');
         if (item) onShortcutTap(item.dataset.id);
     });
-    panel.querySelector('.qd_tray').addEventListener('click', e => {
+    // Capture phase: a docked button's own click handler often calls stopPropagation (Chat Auto Backup,
+    // Chat Browser…), so a bubbling listener never hears the tap and the card stays open.
+    const tray = panel.querySelector('.qd_tray');
+    let trayDown = null;      // { x, y, at } of the pointerdown on a tray slot
+    let trayCloseTimer = null; // fallback close when the button cancels the click (preventDefault on touchend)
+    const closeAfterTray = () => {
+        clearTimeout(trayCloseTimer);
+        trayCloseTimer = null;
+        if (settings().closeOnTray) setTimeout(closePanel, 0); // after the button's own handler
+    };
+    tray.addEventListener('pointerdown', e => {
+        trayDown = e.target.closest('.qd_slot') ? { x: e.clientX, y: e.clientY } : null;
+    }, true);
+    tray.addEventListener('pointerup', e => {
+        const down = trayDown;
+        trayDown = null;
+        if (!down || editing || !isOpen() || e.target.closest?.('.qd_proxy')) return;
+        if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) return; // a drag, not a tap
+        clearTimeout(trayCloseTimer);
+        trayCloseTimer = setTimeout(() => { diag('tray tap without click → close'); closeAfterTray(); }, 450);
+    }, true);
+    tray.addEventListener('click', e => {
         const slot = e.target.closest('.qd_slot');
         if (!slot) return;
-        if (editing) { openEditor('tray', slot.dataset.id); return; }
+        if (editing) { e.preventDefault(); e.stopPropagation(); openEditor('tray', slot.dataset.id); return; }
         // Next tick: the real tap must finish bubbling first, or the button's "tapped outside" handling would close what it just opened.
         if (e.target.closest('.qd_proxy')) { const el = live.get(slot.dataset.id)?.el; setTimeout(() => forwardTap(el), 0); }
-        if (settings().closeOnTray) setTimeout(closePanel, 0); // after the button's own handler
-    });
+        closeAfterTray();
+    }, true);
     panel.querySelector('.qd_bar').addEventListener('click', e => {
         const act = e.target.closest('[data-act]')?.dataset.act;
         if (act === 'add-sc') toggleAddMenu();
