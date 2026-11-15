@@ -181,7 +181,10 @@
     padding-top: 6px;
     border-top: 1px solid color-mix(in srgb, var(--qd-card-border, #555) 60%, transparent);
 }
-#qd_panel .qd_slot { position: relative; display: flex; align-items: center; min-height: 28px; }
+/* Number badges on floating buttons sit 4px past the upper-right corner (float-colors.js).
+ * Room for that inside each slot keeps a badge from covering the next button or being cut off at the card's edge. */
+#qd_panel .qd_slot { position: relative; display: flex; align-items: center; min-height: 28px; padding: 5px 5px 0 0; }
+#qd_panel .qd_slot.qd_proxymode { padding: 0; }
 #qd_panel .qd_slot.qd_gone { display: none; }
 #qd_panel .qd_slot_ph { display: none; font-size: 11px; opacity: 0.6; padding: 4px 8px; border: 1px dashed var(--qd-card-border, #555); border-radius: 6px; }
 #qd_panel .qd_slot_cover { display: none; position: absolute; inset: -2px; border-radius: 6px; cursor: pointer; }
@@ -195,9 +198,10 @@
     clip-path: inset(50%) !important;
 }
 
-/* Undo the extension's own "float over the screen" positioning while docked. */
+/* Undo the extension's own "float over the screen" positioning while docked.
+ * relative (not static): lays out the same, but keeps the button the anchor of its own number badge. */
 #qd_panel [data-qd-tray] {
-    position: static !important;
+    position: relative !important;
     inset: auto !important;
     top: auto !important;
     left: auto !important;
