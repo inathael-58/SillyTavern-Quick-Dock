@@ -12,10 +12,11 @@
  */
 
 import { installThemePalette } from './theme-palette.js';
+import { floatColors, COLOR_MODE_LABELS } from './float-colors.js';
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.5.4'; // keep in sync with manifest.json
+const VERSION = '1.6.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -35,10 +36,10 @@ const DEFAULTS = Object.freeze({
     size: 46,                        // launcher diameter
     itemSize: 46,                    // shortcut button diameter
     iconScale: 42,                   // icon size, % of its button
-    iconColor: 'body',               // see COLOR_SOURCES
-    bgColor: 'tint',
-    borderColor: 'border',
-    accentColor: 'quote',
+    iconColor: 'auto',               // see COLOR_SOURCES — 'auto' adapts to the theme palette and stays readable
+    bgColor: 'auto',
+    borderColor: 'auto',
+    accentColor: 'auto',
     customColors: Object.freeze({ icon: '#ffffff', bg: '#1e1e28', border: '#777777', accent: '#e18a24', grad: '#7a5cff', cardText: '#dddddd', cardBg: '#1e1e28', cardBorder: '#777777' }),
     bgOpacity: 85,                   // % — button backgrounds
     idleOpacity: 100,                // % — launcher while the dock is closed
@@ -47,16 +48,16 @@ const DEFAULTS = Object.freeze({
     fx: 'ring',                      // hover/press effect, see FX
     shape: 'circle',                 // launcher + arc buttons, see SHAPES
     faceStyle: 'flat',               // see FACES
-    gradColor: 'quote',              // second colour of the 'gradient' face
+    gradColor: 'auto',               // second colour of the 'gradient' face
     borderWidth: 1,                  // px, 0–4
     borderStyle: 'solid',            // see BORDER_STYLES
     glow: 'none',                    // see GLOWS — a still glow in the accent colour
     iconFx: 'none',                  // see ICON_FX
     imageFit: 'fill',                // picture icons, see IMAGE_FITS
     imageScale: 100,                 // % — picture icons, 50–200
-    cardTextColor: 'body',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
-    cardBgColor: 'tint',
-    cardBorderColor: 'border',
+    cardTextColor: 'auto',           // the dock card (tray + grid + bar) — see COLOR_SOURCES
+    cardBgColor: 'auto',
+    cardBorderColor: 'auto',
     cardBgOpacity: 92,               // %
     cardBlur: false,
     cardShadow: true,
@@ -72,7 +73,11 @@ const DEFAULTS = Object.freeze({
     tray: Object.freeze([]),         // { id, label, sel, proxy?, icon? } — proxy: the button stays where it is (hidden) and a stand-in icon in the card taps it
 });
 
+// 'auto' / 'auto_accent' adapt to the theme palette (float-colors.js): readable on the button's real
+// background and recomputed on theme changes. The theme slots below are used as they are.
 const COLOR_SOURCES = Object.freeze({
+    auto: [COLOR_MODE_LABELS.auto, null],
+    auto_accent: ['ปรับตามธีม · ใช้สีเน้น', null],
     body: ['ตัวอักษรหลัก (Main Text)', '--SmartThemeBodyColor'],
     em: ['ตัวเอียง (Italics)', '--SmartThemeEmColor'],
     underline: ['ขีดเส้นใต้ (Underline)', '--SmartThemeUnderlineColor'],
@@ -81,8 +86,11 @@ const COLOR_SOURCES = Object.freeze({
     chat: ['พื้นแชท (Chat Background)', '--SmartThemeChatTintColor'],
     border: ['ขอบ (UI Border)', '--SmartThemeBorderColor'],
     shadow: ['เงา (Shadow)', '--SmartThemeShadowColor'],
-    custom: ['กำหนดเอง…', null],
+    custom: ['กำหนดเอง… (ใช้ทุกธีม)', null],
 });
+const COLOR_SLOTS = ['iconColor', 'bgColor', 'borderColor', 'accentColor', 'gradColor', 'cardTextColor', 'cardBgColor', 'cardBorderColor'];
+// the theme slots that were the defaults before 1.6 — unchanged settings move to the adaptive mode once
+const OLD_DEFAULT_COLORS = Object.freeze({ iconColor: 'body', bgColor: 'tint', borderColor: 'border', accentColor: 'quote', gradColor: 'quote', cardTextColor: 'body', cardBgColor: 'tint', cardBorderColor: 'border' });
 
 // Hover (mouse) / press (touch) effects — only colour, outline or transform changes: no blur, no animated shadows.
 const FX = Object.freeze({
@@ -165,6 +173,11 @@ function settings() {
     if (s.labelMode === undefined && s.showLabels === false) s.labelMode = 'hide'; // 1.1 setting
     delete s.showLabels;
     if (s.cardBlur === undefined && s.blur !== undefined) s.cardBlur = !!s.blur; // before 1.4 one switch blurred buttons and card
+    if (!s.adaptiveColors) { // 1.6: colours still on the old theme-slot defaults become adaptive
+        s.adaptiveColors = true;
+        for (const k of COLOR_SLOTS) if (s[k] === undefined || s[k] === OLD_DEFAULT_COLORS[k]) s[k] = DEFAULTS[k];
+    }
+    for (const k of COLOR_SLOTS) if (s[k] !== undefined && !COLOR_SOURCES[s[k]]) s[k] = DEFAULTS[k];
     for (const [k, v] of Object.entries(DEFAULTS)) {
         if (s[k] === undefined) s[k] = Array.isArray(v) ? [] : (v && typeof v === 'object') ? { ...v } : v;
     }
@@ -554,6 +567,29 @@ function colorValue(key, which) {
     return v ? `var(${v})` : null;
 }
 
+let palette = null; // theme-palette.js handle
+
+/**
+ * Colours for one group (buttons or the card). Slots set to a theme colour or a custom colour are used as they are;
+ * 'auto' slots come from the theme palette, adjusted to stay readable on that group's real background.
+ * Returns { slot: css colour } for every slot (null = keep the CSS fallback).
+ */
+function groupColors(slots) {
+    const s = settings();
+    const base = floatColors(palette?.current, {});
+    const fixed = {};
+    for (const [role, [key, which]] of Object.entries(slots)) {
+        const mode = s[key];
+        fixed[role] = mode === 'auto' ? null : mode === 'auto_accent' ? base?.accent ?? null : colorValue(mode, which);
+    }
+    const c = floatColors(palette?.current, fixed) ?? {};
+    const out = {};
+    for (const [role, [key]] of Object.entries(slots)) {
+        out[role] = s[key] === 'auto' ? c[role] ?? null : fixed[role];
+    }
+    return out;
+}
+
 // Theme colours like --SmartThemeBlurTintColor carry their own alpha, which would multiply with
 // the opacity slider. Keep only the RGB so the slider alone decides how see-through buttons are.
 const RELATIVE_COLOR = globalThis.CSS?.supports?.('color', 'rgb(from red r g b / 1)') ?? false;
@@ -576,14 +612,16 @@ function applyLook() {
     const s = settings();
     const root = document.documentElement;
     const set = (k, v) => root.style.setProperty(k, v);
-    set('--qd-fg', colorValue(s.iconColor, 'icon') ?? 'var(--SmartThemeBodyColor)');
-    set('--qd-bg', opaque(colorValue(s.bgColor, 'bg') ?? 'var(--SmartThemeBlurTintColor)'));
-    set('--qd-border', colorValue(s.borderColor, 'border') ?? 'var(--SmartThemeBorderColor)');
-    set('--qd-accent', colorValue(s.accentColor, 'accent') ?? 'var(--SmartThemeQuoteColor)');
+    const btn = groupColors({ fg: ['iconColor', 'icon'], bg: ['bgColor', 'bg'], border: ['borderColor', 'border'], accent: ['accentColor', 'accent'] });
+    const card = groupColors({ fg: ['cardTextColor', 'cardText'], bg: ['cardBgColor', 'cardBg'], border: ['cardBorderColor', 'cardBorder'] });
+    set('--qd-fg', btn.fg ?? 'var(--SmartThemeBodyColor)');
+    set('--qd-bg', opaque(btn.bg ?? 'var(--SmartThemeBlurTintColor)'));
+    set('--qd-border', btn.border ?? 'var(--SmartThemeBorderColor)');
+    set('--qd-accent', btn.accent ?? 'var(--SmartThemeQuoteColor)');
     set('--qd-bg-op', `${clamp(Number.isFinite(Number(s.bgOpacity)) ? Number(s.bgOpacity) : 85, 0, 100)}%`);
-    set('--qd-card-fg', colorValue(s.cardTextColor, 'cardText') ?? 'var(--SmartThemeBodyColor)');
-    set('--qd-card-bg', opaque(colorValue(s.cardBgColor, 'cardBg') ?? 'var(--SmartThemeBlurTintColor)'));
-    set('--qd-card-border', colorValue(s.cardBorderColor, 'cardBorder') ?? 'var(--SmartThemeBorderColor)');
+    set('--qd-card-fg', card.fg ?? 'var(--SmartThemeBodyColor)');
+    set('--qd-card-bg', opaque(card.bg ?? 'var(--SmartThemeBlurTintColor)'));
+    set('--qd-card-border', card.border ?? 'var(--SmartThemeBorderColor)');
     set('--qd-card-bg-op', `${clamp(Number.isFinite(Number(s.cardBgOpacity)) ? Number(s.cardBgOpacity) : 92, 0, 100)}%`);
     set('--qd-idle-op', String(clamp(Number(s.idleOpacity) || 100, 15, 100) / 100));
     set('--qd-item', `${itemSize()}px`);
@@ -592,7 +630,8 @@ function applyLook() {
     set('--qd-radius', (SHAPES[s.shape] ?? SHAPES.circle)[1]);
     set('--qd-bw', `${clamp(Number.isFinite(Number(s.borderWidth)) ? Math.round(Number(s.borderWidth)) : 1, 0, 4)}px`);
     set('--qd-bstyle', BORDER_STYLES[s.borderStyle] ? s.borderStyle : 'solid');
-    set('--qd-grad', opaque(colorValue(s.gradColor, 'grad') ?? 'var(--SmartThemeQuoteColor)'));
+    const grad = s.gradColor === 'auto' || s.gradColor === 'auto_accent' ? btn.accent : colorValue(s.gradColor, 'grad');
+    set('--qd-grad', opaque(grad ?? 'var(--SmartThemeQuoteColor)'));
     for (const k of Object.keys(FACES)) root.classList.toggle(`qd-face-${k}`, s.faceStyle === k);
     for (const k of Object.keys(GLOWS)) root.classList.toggle(`qd-glow-${k}`, s.glow === k);
     for (const k of Object.keys(ICON_FX)) root.classList.toggle(`qd-icon-${k}`, s.iconFx === k);
@@ -1843,7 +1882,7 @@ function renderSettings() {
         const { accentBorder, ...rest } = look;
         Object.assign(s, rest);
         if (accentBorder) {
-            s.borderColor = s.accentColor;
+            s.borderColor = s.accentColor === 'auto' ? 'auto_accent' : s.accentColor;
             if (s.accentColor === 'custom') s.customColors.border = s.customColors.accent;
         }
         save();
@@ -2001,7 +2040,7 @@ async function reloadWithFreshFiles() {
     try {
         // cache: 'reload' fetches from the server and overwrites the browser's cached copy,
         // so the page reload below picks up the new files.
-        await Promise.all(['index.js', 'theme-palette.js', 'style.css', 'manifest.json'].map(f =>
+        await Promise.all(['index.js', 'theme-palette.js', 'float-colors.js', 'style.css', 'manifest.json'].map(f =>
             fetch(new URL(f, BASE_URL), { cache: 'reload' }).catch(() => null)));
     } finally {
         location.reload();
@@ -2024,8 +2063,9 @@ function registerDebugCommand() {
 
 function init() {
     // สีที่อ่านออกเสมอสำหรับแถบคำแนะนำและหน้าตั้งค่า (ดู theme-palette.js)
-    // ปุ่มและการ์ด dock ใช้หน้าตาที่ผู้ใช้ตั้งไว้เหมือนเดิม
-    try { installThemePalette({ prefix: 'qd' }); } catch (err) { console.warn(LOG, 'theme palette', err); }
+    // ปุ่มและการ์ด dock ใช้หน้าตาที่ผู้ใช้ตั้งไว้ ช่องสีที่เลือก "ปรับตามธีม" ก็คำนวณจากชุดนี้
+    // สีปุ่มและถาดแบบ "ปรับตามธีม" ก็ดึงจากชุดนี้ (float-colors.js) แล้วคำนวณใหม่เมื่อเปลี่ยนธีม
+    try { palette = installThemePalette({ prefix: 'qd' }); palette.onChange(() => { if (launcher) applyLook(); }); } catch (err) { console.warn(LOG, 'theme palette', err); }
     if (document.getElementById('qd_launcher')) return; // loaded twice
     settings();
     buildUI();
