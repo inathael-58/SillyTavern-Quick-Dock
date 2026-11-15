@@ -521,3 +521,15 @@ html.qd-fx-lift #qd_panel .qd_sc:active .qd_btnface { transform: translateY(-3px
 @media (prefers-reduced-motion: reduce) {
     #qd_arc .qd_btnface, #qd_panel .qd_sc, #qd_launcher > * { transition: none; }
 }
+
+/* แม่แบบสีที่อ่านออกเสมอ (theme-palette.js) — แถบคำแนะนำตอนเลือกปุ่ม และหน้าตั้งค่า: พื้นทึบ สีเน้น/ตัวอักษรตัดกับพื้นจริง
+   ทำงานเมื่อคำนวณสีสำเร็จแล้วเท่านั้น (<html class="qd-pal">) ถ้าไม่สำเร็จจะใช้สีธีมตรง ๆ แบบเดิม
+   ปุ่มหลัก ช็อตคัท และการ์ด dock ไม่อยู่ในนี้ — ใช้สีและความโปร่งที่ผู้ใช้ตั้งเองในหน้าตา */
+html.qd-pal :is(#qd_pickbar, .qd_settings) {
+    --SmartThemeBlurTintColor: var(--qd-p-surface);
+    --SmartThemeBodyColor: var(--qd-p-fg);
+    --SmartThemeQuoteColor: var(--qd-p-accent-text);
+    --SmartThemeEmColor: var(--qd-p-em);
+    --SmartThemeUnderlineColor: var(--qd-p-underline);
+    --SmartThemeBorderColor: var(--qd-p-line);
+}

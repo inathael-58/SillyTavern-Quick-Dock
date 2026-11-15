@@ -11,9 +11,11 @@
  *     covering the chat (they keep working and keep their status).
  */
 
+import { installThemePalette } from './theme-palette.js';
+
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.5.3'; // keep in sync with manifest.json
+const VERSION = '1.5.4'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -1999,7 +2001,7 @@ async function reloadWithFreshFiles() {
     try {
         // cache: 'reload' fetches from the server and overwrites the browser's cached copy,
         // so the page reload below picks up the new files.
-        await Promise.all(['index.js', 'style.css', 'manifest.json'].map(f =>
+        await Promise.all(['index.js', 'theme-palette.js', 'style.css', 'manifest.json'].map(f =>
             fetch(new URL(f, BASE_URL), { cache: 'reload' }).catch(() => null)));
     } finally {
         location.reload();
@@ -2021,6 +2023,9 @@ function registerDebugCommand() {
 // ---------------------------------------------------------------- init
 
 function init() {
+    // สีที่อ่านออกเสมอสำหรับแถบคำแนะนำและหน้าตั้งค่า (ดู theme-palette.js)
+    // ปุ่มและการ์ด dock ใช้หน้าตาที่ผู้ใช้ตั้งไว้เหมือนเดิม
+    try { installThemePalette({ prefix: 'qd' }); } catch (err) { console.warn(LOG, 'theme palette', err); }
     if (document.getElementById('qd_launcher')) return; // loaded twice
     settings();
     buildUI();
