@@ -16,7 +16,7 @@ import { floatColors, COLOR_MODE_LABELS } from './float-colors.js';
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.6.0'; // keep in sync with manifest.json
+const VERSION = '1.6.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
@@ -147,8 +147,8 @@ const BUILTINS = Object.freeze({
     lastBot: { label: 'บอทตอบ', icon: 'fa-solid fa-robot', hint: 'ต้นข้อความล่าสุดที่บอทตอบ' },
 });
 
-const ICONS = [
-    '⚡', '✨', '🌙', '🌸', '🍀', '🐱', '🐾', '💜', '🔮', '📖', '🎲', '☕',
+const ICONS = [ // slop-ok: emoji here are choices the user picks for their own buttons
+    '⚡', '✨', '🌙', '🌸', '🍀', '🐱', '🐾', '💜', '🔮', '📖', '🎲', '☕', // slop-ok: user-picked icons
     'fa-solid fa-bolt', 'fa-solid fa-star', 'fa-solid fa-heart', 'fa-solid fa-bars', 'fa-solid fa-grip',
     'fa-solid fa-layer-group', 'fa-solid fa-wand-magic-sparkles', 'fa-solid fa-feather', 'fa-solid fa-pen-nib',
     'fa-solid fa-book', 'fa-solid fa-book-open', 'fa-solid fa-book-atlas', 'fa-solid fa-scroll', 'fa-solid fa-bookmark',
@@ -1356,7 +1356,7 @@ function checkBlankTray() {
         if (box.right <= box.left || box.bottom <= box.top) continue; // scrolled out of view — try again next time
         if (paintsIn(el, box)) { item.proxy = false; save(); continue; }
         setTrayProxy(item, true);
-        toast.info(`“${esc(item.label)}” แสดงใน dock ไม่ได้ เลยใช้ไอคอนแทนปุ่มนั้น (เปลี่ยนได้ที่ ✏️ → แตะปุ่ม)`);
+        toast.info(`“${esc(item.label)}” แสดงใน dock ไม่ได้ เลยใช้ไอคอนแทนปุ่มนั้น (เปลี่ยนได้ที่ปุ่มดินสอ “แก้ไข” แล้วแตะปุ่มนั้น)`);
     }
 }
 
