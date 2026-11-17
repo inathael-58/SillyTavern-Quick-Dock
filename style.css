@@ -552,3 +552,17 @@ html.qd-pal :is(#qd_pickbar, .qd_settings) {
     --SmartThemeUnderlineColor: var(--qd-p-underline);
     --SmartThemeBorderColor: var(--qd-p-line);
 }
+
+/* ST's plain .menu_button is display:flex, which drops the space between an icon and its
+   label. Zero-specificity roots, so a gap this extension already sets still wins. */
+:where([class^="qd_"], [class*=" qd_"], [id^="qd_"]) .menu_button { gap: 0.4em; }
+
+/* ST draws inputs with a grey film (var(--black30a)) that turns muddy on light themes.
+   In these panels, once the palette is ready, inputs take its card surface and readable
+   text instead, so no custom CSS is needed. */
+html.qd-pal :where(#qd_pickbar, .qd_settings) :is(.text_pole, textarea, select, input:is([type="text"], [type="search"], [type="number"], [type="url"], [type="email"], [type="password"], :not([type]))) {
+    background-color: var(--qd-p-surface2);
+    color: var(--qd-p-fg);
+    border-color: var(--qd-p-line);
+}
+html.qd-pal :where(#qd_pickbar, .qd_settings) :is(.text_pole, textarea, input)::placeholder { color: var(--qd-p-muted); opacity: 1; }

@@ -16,7 +16,7 @@ import { floatColors, COLOR_MODE_LABELS } from './float-colors.js';
 
 const MODULE = 'quick_dock';
 const LOG = '[QuickDock]';
-const VERSION = '1.6.1'; // keep in sync with manifest.json
+const VERSION = '1.6.2'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 const EDGE_MARGIN = 8;       // px between our UI and the screen edge
 const LONG_PRESS_MS = 550;
