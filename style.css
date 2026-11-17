@@ -1,5 +1,15 @@
 /* Quick Dock — uses SillyTavern theme variables so it follows any theme */
 
+/* One visual system. Shape lock: the launcher and shortcut faces use the shape the user
+   picks (--qd-radius); cards and bars 12, cells and controls 6, tiny labels 4. Nothing
+   else. The attention dot uses the palette's danger red (fixed red if it can't run). */
+:root {
+    --qd-r-card: 12px;
+    --qd-r-ctl: 6px;
+    --qd-r-tag: 4px;
+    --qd-danger: var(--qd-p-danger, #e5484d);
+}
+
 /* ---------------------------------------------------------------- launcher */
 /* Colours, sizes and effects come from the settings as variables on <html> (applyLook). */
 #qd_launcher {
@@ -29,7 +39,7 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     touch-action: none;
-    transition: left 0.18s ease-out, top 0.18s ease-out, opacity 0.15s;
+    transition: left 0.18s ease-out, top 0.18s ease-out, opacity 0.15s; /* slop-ok: placed by left/top on purpose (overlays skill, trap 1) */
 }
 #qd_launcher.qd_off { display: none; }
 #qd_launcher.qd_active,
@@ -52,8 +62,9 @@
 #qd_launcher[data-status] { opacity: 1; }
 #qd_launcher[data-status=""] { opacity: var(--qd-idle-op, 1); }
 #qd_launcher.qd_active { opacity: 1; }
-#qd_launcher[data-status="attention"]::after { display: block; background: #e5484d; animation: qd_pulse 1.4s ease-in-out infinite; }
-@keyframes qd_pulse { 50% { box-shadow: 0 0 0 4px rgba(229, 72, 77, 0.35); } }
+/* slop-ok: the pulse runs only while a tray button needs attention, and stops with it */
+#qd_launcher[data-status="attention"]::after { display: block; background: var(--qd-danger); animation: qd_pulse 1.4s ease-in-out infinite; } /* slop-ok: see above */
+@keyframes qd_pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--qd-danger) 35%, transparent); } }
 
 /* ---------------------------------------------------------------- card (tray, editor, bar; grid layout: shortcuts too) */
 #qd_panel {
@@ -75,7 +86,7 @@
     color: var(--qd-card-fg, #ddd);
     background: color-mix(in srgb, var(--qd-card-bg, #1e1e28) var(--qd-card-bg-op, 92%), transparent);
     border: 1px solid var(--qd-card-border, #555);
-    border-radius: 12px;
+    border-radius: var(--qd-r-card);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
     font-family: var(--mainFontFamily, inherit);
 }
@@ -101,7 +112,7 @@
     align-items: center;
     gap: 4px;
     padding: 8px 2px 6px;
-    border-radius: 8px;
+    border-radius: var(--qd-r-ctl);
     border: 1px solid transparent;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -159,7 +170,7 @@
     text-overflow: ellipsis;
     color: var(--SmartThemeBodyColor, #ddd);
     background: color-mix(in srgb, var(--qd-bg, #1e1e28) 85%, transparent);
-    border-radius: 4px;
+    border-radius: var(--qd-r-tag);
 }
 #qd_arc.qd_nolabels .qd_arc_item span { display: none; }
 #qd_arc .qd_arc_item.qd_lbl_end { align-items: flex-end; }
@@ -186,8 +197,8 @@
 #qd_panel .qd_slot { position: relative; display: flex; align-items: center; min-height: 28px; padding: 5px 5px 0 0; }
 #qd_panel .qd_slot.qd_proxymode { padding: 0; }
 #qd_panel .qd_slot.qd_gone { display: none; }
-#qd_panel .qd_slot_ph { display: none; font-size: 11px; opacity: 0.6; padding: 4px 8px; border: 1px dashed var(--qd-card-border, #555); border-radius: 6px; }
-#qd_panel .qd_slot_cover { display: none; position: absolute; inset: -2px; border-radius: 6px; cursor: pointer; }
+#qd_panel .qd_slot_ph { display: none; font-size: 11px; opacity: 0.6; padding: 4px 8px; border: 1px dashed var(--qd-card-border, #555); border-radius: var(--qd-r-ctl); }
+#qd_panel .qd_slot_cover { display: none; position: absolute; inset: -2px; border-radius: var(--qd-r-ctl); cursor: pointer; }
 
 /* Stand-in icon: the real button stays where its extension put it, invisible and untouchable; tapping the icon taps it. */
 #qd_panel .qd_slot:not(.qd_proxymode) .qd_proxy { display: none; }
@@ -228,7 +239,7 @@
 /* add menu */
 #qd_panel .qd_addmenu { display: none; flex-direction: column; gap: 2px; max-width: var(--qd-card-w); }
 #qd_panel .qd_addmenu.qd_show { display: flex; }
-#qd_panel .qd_addbtn { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+#qd_panel .qd_addbtn { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: var(--qd-r-ctl); cursor: pointer; font-size: 13px; }
 #qd_panel .qd_addbtn[hidden] { display: none; }
 #qd_panel .qd_addbtn > :first-child { width: 18px; text-align: center; }
 #qd_panel .qd_addbtn:active { background: color-mix(in srgb, var(--qd-card-border, #555) 35%, transparent); }
@@ -265,7 +276,7 @@
     overscroll-behavior: contain;
     padding: 2px;
     border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555) 60%, transparent);
-    border-radius: 6px;
+    border-radius: var(--qd-r-ctl);
 }
 .qd_icongrid .qd_ic {
     display: flex;
@@ -273,7 +284,7 @@
     justify-content: center;
     height: 34px;
     font-size: 17px;
-    border-radius: 6px;
+    border-radius: var(--qd-r-ctl);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
@@ -294,7 +305,7 @@
     gap: 4px;
     padding: 6px 8px;
     font-size: 12px;
-    border-radius: 6px;
+    border-radius: var(--qd-r-ctl);
     opacity: 0.8;
     cursor: pointer;
     white-space: nowrap;
@@ -329,7 +340,7 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
     -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     border: 1px solid var(--SmartThemeQuoteColor, #e18a24);
-    border-radius: 10px;
+    border-radius: var(--qd-r-card);
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
     font-size: 13px;
     pointer-events: none; /* taps on the text fall through to whatever is underneath */
@@ -347,12 +358,12 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
     display: none;
     pointer-events: none;
     border: 2px solid var(--SmartThemeQuoteColor, #e18a24);
-    border-radius: 6px;
+    border-radius: var(--qd-r-ctl);
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
 }
 #qd_hl.qd_show { display: block; }
 
-.qd_flash { outline: 3px solid var(--SmartThemeQuoteColor, #e18a24) !important; outline-offset: 2px; animation: qd_flash 0.4s ease-in-out 4 alternate; }
+.qd_flash { outline: 3px solid var(--SmartThemeQuoteColor, #e18a24) !important; outline-offset: 2px; animation: qd_flash 0.4s ease-in-out 4 alternate; } /* slop-ok: one-off 'here it is' cue */
 @keyframes qd_flash { to { outline-color: transparent; } }
 
 /* ---------------------------------------------------------------- settings drawer */
@@ -379,6 +390,9 @@ html.qd_picking body, html.qd_picking body * { -webkit-touch-callout: none; -web
 .qd_settings .qd_icongrid { margin-bottom: 6px; }
 .qd_settings .qd_set_ic { width: 20px; text-align: center; flex-shrink: 0; }
 
+body.reduced-motion #qd_launcher { transition: none; }
+body.reduced-motion #qd_launcher[data-status="attention"]::after,
+body.reduced-motion .qd_flash { animation: none; }
 @media (prefers-reduced-motion: reduce) {
     #qd_launcher { transition: none; }
     #qd_launcher[data-status="attention"]::after, .qd_flash { animation: none; }
@@ -407,25 +421,25 @@ html.qd-glow-strong { --qd-glow-sh: 0 0 12px 3px color-mix(in srgb, var(--qd-acc
 
 html.qd-face-gradient #qd_launcher,
 html.qd-face-gradient #qd_arc .qd_btnface {
-    background-image: linear-gradient(145deg, color-mix(in srgb, var(--qd-grad, #7a5cff) var(--qd-bg-op, 85%), transparent) 10%, transparent 90%);
+    background-image: linear-gradient(145deg, color-mix(in srgb, var(--qd-grad, #7a5cff) var(--qd-bg-op, 85%), transparent) 10%, transparent 90%); /* slop-ok: face style the user picks */
 }
 html.qd-face-glossy #qd_launcher,
 html.qd-face-glossy #qd_arc .qd_btnface {
-    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.08) 48%, rgba(0, 0, 0, 0.12) 52%, rgba(0, 0, 0, 0.02));
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.08) 48%, rgba(0, 0, 0, 0.12) 52%, rgba(0, 0, 0, 0.02)); /* slop-ok: face style the user picks */
 }
 html.qd-face-glass #qd_launcher,
 html.qd-face-glass #qd_arc .qd_btnface {
-    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.04) 60%);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.04) 60%); /* slop-ok: face style the user picks */
 }
 html.qd-face-glass { --qd-inset-sh: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -1px 1px rgba(0, 0, 0, 0.15); }
 html.qd-face-raised #qd_launcher,
 html.qd-face-raised #qd_arc .qd_btnface {
-    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.14));
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.14)); /* slop-ok: face style the user picks */
 }
 html.qd-face-raised { --qd-inset-sh: inset 0 2px 1px rgba(255, 255, 255, 0.22), inset 0 -3px 2px rgba(0, 0, 0, 0.3); }
 html.qd-face-inset #qd_launcher,
 html.qd-face-inset #qd_arc .qd_btnface {
-    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.06));
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.06)); /* slop-ok: face style the user picks */
 }
 html.qd-face-inset { --qd-inset-sh: inset 0 3px 6px rgba(0, 0, 0, 0.4); }
 
@@ -473,7 +487,7 @@ html.qd-icon-glow .qd_img { filter: drop-shadow(0 0 4px var(--qd-accent, #e18a24
 html.qd-icon-shadow #qd_launcher,
 html.qd-icon-shadow .qd_btnface { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 html.qd-icon-glow #qd_launcher,
-html.qd-icon-glow .qd_btnface { text-shadow: 0 0 6px var(--qd-accent, #e18a24), 0 0 2px var(--qd-accent, #e18a24); }
+html.qd-icon-glow .qd_btnface { text-shadow: 0 0 6px var(--qd-accent, #e18a24), 0 0 2px var(--qd-accent, #e18a24); } /* slop-ok: icon effect the user picks */
 
 /* ---------------------------------------------------------------- hover / press effects
  * Cheap on purpose: colour, outline or a transform on the inner face only (never on
@@ -522,6 +536,7 @@ html.qd-fx-lift #qd_panel .qd_sc:active .qd_btnface { transform: translateY(-3px
 .qd_settings .qd_set_title { display: flex; align-items: center; gap: 8px; }
 .qd_settings .qd_inline_btn { width: auto; margin: 0; padding: 2px 8px; font-weight: 400; font-size: 0.9em; }
 .qd_settings .qd_set_grid input[type="range"] { width: 100%; }
+body.reduced-motion :is(#qd_arc .qd_btnface, #qd_panel .qd_sc, #qd_launcher > *) { transition: none; }
 @media (prefers-reduced-motion: reduce) {
     #qd_arc .qd_btnface, #qd_panel .qd_sc, #qd_launcher > * { transition: none; }
 }
